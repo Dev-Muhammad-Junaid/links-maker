@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Links Maker — Options</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root { --border: #e5e7eb; --muted: #6b7280; }
+      body { font-family: Poppins, Satoshi, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; color: #111827; }
+      h1 { font-size: 20px; margin: 0 0 16px; }
+      h2 { font-size: 14px; margin: 20px 0 8px; }
+      .card { border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+      .settings { display: grid; grid-template-columns: 1fr; gap: 10px; }
+      label.toggle { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+      .grid-header { display: grid; grid-template-columns: 1fr 120px 40px; gap: 8px; font-size: 12px; color: var(--muted); margin: 8px 0; }
+      .row { display: grid; grid-template-columns: 1fr 120px 40px; gap: 8px; align-items: center; margin-bottom: 8px; }
+      .profileBox { display: grid; grid-template-columns: 40px 1fr; gap: 10px; align-items: center; }
+      .name { font-weight: 700; }
+      .email { color: var(--muted); font-size: 12px; font-weight: 400; }
+      .labelInput { margin-top: 6px; }
+      input[type="text"], input[type="number"] { padding: 8px; border: 1px solid var(--border); border-radius: 8px; }
+      button { padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: #fff; cursor: pointer; }
+      button.primary { background: #111827; color: #fff; border-color: #111827; }
+      .muted { color: var(--muted); font-size: 12px; margin-top: 8px; }
+      img.avatar { width: 40px; height: 40px; border-radius: 999px; object-fit: cover; }
+    </style>
+  </head>
+  <body>
+    <h1>Links Maker — Options</h1>
+
+    <h2>Display</h2>
+    <div class="card settings">
+      <label class="toggle"><input id="showAvatars" type="checkbox" /> Show avatars</label>
+      <label class="toggle"><input id="showEmails" type="checkbox" /> Show emails</label>
+    </div>
+
+    <h2>Profiles shown in Switch Profiles</h2>
+    <div class="grid-header">
+      <div>Profile</div>
+      <div>authuser</div>
+      <div></div>
+    </div>
+    <div id="profiles" class="card"></div>
+
+    <div style="margin-top: 12px; display:flex; gap:8px;">
+      <button id="add" class="primary">Add profile</button>
+      <button id="save">Save</button>
+    </div>
+
+    <p class="muted">These profiles appear in the in-page Switch Profiles modal. Use display toggles above to show/hide avatars and emails.</p>
+
+    <script src="options.js"></script>
+  </body>
+</html>

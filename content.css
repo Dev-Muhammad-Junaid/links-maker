@@ -1,0 +1,4 @@
+/* Modal styles are inline in content.js to avoid site CSS conflicts. */
+html, body, #links-maker-switcher {
+  font-family: Poppins, Satoshi, system-ui, -apple-system, Segoe UI, Roboto, sans-serif !important;
+}

@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "Links Maker — Quick Profile Switcher",
+  "version": "0.3.0",
+  "description": "Quickly switch between Google account profiles via omnibox, context menu, or an in-page switcher.",
+  "omnibox": { "keyword": "switch" },
+  "permissions": [
+    "storage",
+    "tabs",
+    "activeTab",
+    "contextMenus",
+    "scripting"
+  ],
+  "host_permissions": ["https://*/*", "http://*/*"],
+  "background": { "service_worker": "background.js" },
+  "options_page": "options.html",
+  "action": {
+    "default_title": "Links Maker"
+  },
+  "commands": {
+    "toggle_widget": {
+      "suggested_key": { "default": "Alt+L", "mac": "Alt+L" },
+      "description": "Toggle Links Maker in-page widget"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.google.com/*", "*://*.cloud.google.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}
