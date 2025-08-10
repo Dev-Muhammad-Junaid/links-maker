@@ -18,12 +18,21 @@ function ensureDocsUIndex(urlObj, desiredIndex) {
   try {
     if (urlObj.hostname !== 'docs.google.com') return;
     const p = urlObj.pathname;
-    const re = /\/(document|spreadsheets|presentation)\/(?:u\/\d+\/)?d\//;
-    const m = p.match(re);
-    if (!m) return;
+    const re = /(\/(document|spreadsheets|presentation)\/(?:u\/\d+\/)?d\/)/;
+    if (!re.test(p)) return;
     if (/\/(document|spreadsheets|presentation)\/u\/\d+\/d\//.test(p)) return;
-    const type = m[1];
-    urlObj.pathname = p.replace(new RegExp(`/${type}/d/`), `/${type}/u/${desiredIndex}/d/`);
+    urlObj.pathname = p.replace(/\/(document|spreadsheets|presentation)\/d\//, `/$1/u/${desiredIndex}/d/`);
+  } catch {}
+}
+
+function ensureMeetUIndex(urlObj, desiredIndex) {
+  try {
+    if (urlObj.hostname !== 'meet.google.com') return;
+    const p = urlObj.pathname || '/';
+    if (/^\/u\/\d+\//.test(p)) return; // already has /u/{n}/
+    // Insert /u/{n}/ as the first segment for meeting/join paths
+    if (p === '/' ) return; // landing page; skip
+    urlObj.pathname = `/u/${desiredIndex}${p.startsWith('/') ? '' : '/'}${p.replace(/^\//, '')}`;
   } catch {}
 }
 
@@ -50,6 +59,7 @@ function buildProfileSwitchUrl(currentUrlString, desiredIndex) {
       replaceAuthUserParam(urlObj, desiredIndex);
       replacePathUIndex(urlObj, desiredIndex);
       ensureDocsUIndex(urlObj, desiredIndex);
+      ensureMeetUIndex(urlObj, desiredIndex);
     } else {
       replaceAuthUserParam(urlObj, desiredIndex);
     }
@@ -102,6 +112,18 @@ function parseGoogleFileId(urlString) {
     }
   } catch {}
   return null;
+}
+
+function isMeetUrl(urlString) {
+  try {
+    const u = new URL(urlString);
+    if (u.hostname !== 'meet.google.com') return false;
+    const p = u.pathname || '/';
+    if (/^\/lookup\//.test(p)) return true;
+    if (/^\/[a-z]{3}-[a-z]{4}-[a-z]{3}(\W|$)/i.test(p)) return true;
+    if (/^\/v2\//.test(p)) return true;
+    return false;
+  } catch { return false; }
 }
 
 async function getActiveTab() {
@@ -262,7 +284,10 @@ async function probeAccessInPage(tabId, url, authIndex) {
       func: async (requestUrl) => {
         try {
           const resp = await fetch(requestUrl, { credentials: 'include', redirect: 'follow' });
-          return { ok: true, status: resp.status, finalUrl: resp.url };
+          let text = '';
+          try { text = await resp.text(); } catch {}
+          const snippet = (text || '').toLowerCase().slice(0, 4000);
+          return { ok: true, status: resp.status, finalUrl: resp.url, snippet };
         } catch (e) {
           return { ok: false, error: String(e) };
         }
@@ -270,7 +295,30 @@ async function probeAccessInPage(tabId, url, authIndex) {
     });
     const r = res?.result || {};
     if (!r.ok) { pushLog("error", "Access probe page error", { authIndex, error: r.error }); return { status: 'unknown', reason: 'fetch_error' }; }
-    const classified = (r.status === 200 || r.status === 204) ? 'access' : ((r.status === 401 || r.status === 403) ? 'no_access' : 'unknown');
+
+    // Heuristic classification; add Meet-aware rules
+    let classified = 'unknown';
+    const status = Number(r.status);
+    try {
+      const finalHost = new URL(r.finalUrl || targetUrl).hostname;
+      const s = String(r.snippet || '').toLowerCase();
+      const redirectedToLogin = /accounts\.google\.com/.test(r.finalUrl || '');
+
+      if (status === 401 || status === 403 || redirectedToLogin) {
+        classified = 'no_access';
+      } else if (finalHost === 'meet.google.com') {
+        const hasJoinNow = s.includes('join now') || s.includes('rejoin');
+        const askToJoin = s.includes('ask to join') || s.includes('request to join') || s.includes("you can’t join") || s.includes("you can't join") || s.includes('doesn’t exist') || s.includes("doesn't exist");
+        if (hasJoinNow) classified = 'access';
+        else if (askToJoin) classified = 'no_access';
+        else if (status === 200) classified = 'unknown';
+      } else {
+        classified = (status === 200 || status === 204) ? 'access' : ((status === 401 || status === 403) ? 'no_access' : 'unknown');
+      }
+    } catch {
+      classified = (Number(r.status) === 200 || Number(r.status) === 204) ? 'access' : ((Number(r.status) === 401 || Number(r.status) === 403) ? 'no_access' : 'unknown');
+    }
+
     pushLog("info", "Access probe response (page)", { authIndex, statusCode: r.status, finalUrl: r.finalUrl, classified });
     return { status: classified, code: r.status, finalUrl: r.finalUrl };
   } catch (e) {
@@ -293,8 +341,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const { url } = msg;
     const tabId = sender?.tab?.id;
     pushLog("info", "Access check begin", { url, tabId });
-    const fileMeta = parseGoogleFileId(url);
-    if (!fileMeta || !tabId) {
+    const isSupported = Boolean(parseGoogleFileId(url)) || isMeetUrl(url);
+    if (!isSupported || !tabId) {
       pushLog("warn", "Access check unsupported", { url, tabId });
       sendResponse({ ok: true, results: {}, supported: false });
       return true;

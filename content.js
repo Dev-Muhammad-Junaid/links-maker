@@ -193,7 +193,8 @@
   // ---------- Google/YouTube: full modal ----------
   const isDocsFile = () => host === 'docs.google.com' && (/\/document\//.test(location.pathname) || /\/spreadsheets\//.test(location.pathname) || /\/presentation\//.test(location.pathname));
   const isDriveFile = () => host === 'drive.google.com' && (/\/file\//.test(location.pathname) || /open\?id=/.test(location.search));
-  const supportsAccessProbe = () => isDocsFile() || isDriveFile();
+  const isMeet = () => host === 'meet.google.com';
+  const supportsAccessProbe = () => isDocsFile() || isDriveFile() || isMeet();
 
   function assetUrl(name) { return chrome.runtime.getURL(name); }
 
@@ -505,7 +506,7 @@
   }
 
   function triggerAccessCheck() {
-    if (!(isDocsFile() || isDriveFile())) return;
+    if (!(isDocsFile() || isDriveFile() || isMeet())) return;
     console.log('[LinksMaker:Content] check start', location.href);
     setLoadingState(true);
     chrome.runtime.sendMessage({ type: 'lm.checkAccess', url: location.href }, (res) => {
@@ -537,7 +538,7 @@
       render(data);
     });
 
-    if (isDocsFile() || isDriveFile()) {
+    if (isDocsFile() || isDriveFile() || isMeet()) {
       setTimeout(() => triggerAccessCheck(), 800);
     }
   }
