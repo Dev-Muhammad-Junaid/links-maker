@@ -14,12 +14,23 @@ function isGoogleLikeHost(hostname) {
   return GOOGLE_HOST_PATTERNS.some((re) => re.test(hostname));
 }
 
+function ensureDocsUIndex(urlObj, desiredIndex) {
+  try {
+    if (urlObj.hostname !== 'docs.google.com') return;
+    const p = urlObj.pathname;
+    const re = /\/(document|spreadsheets|presentation)\/(?:u\/\d+\/)?d\//;
+    const m = p.match(re);
+    if (!m) return;
+    if (/\/(document|spreadsheets|presentation)\/u\/\d+\/d\//.test(p)) return;
+    const type = m[1];
+    urlObj.pathname = p.replace(new RegExp(`/${type}/d/`), `/${type}/u/${desiredIndex}/d/`);
+  } catch {}
+}
+
 function replaceAuthUserParam(urlObj, desiredIndex) {
-  const original = urlObj.toString();
   const params = urlObj.searchParams;
   params.set("authuser", String(desiredIndex));
   urlObj.search = params.toString();
-  console.debug("[LinksMaker] authuser param set:", { from: original, to: urlObj.toString() });
 }
 
 function replacePathUIndex(urlObj, desiredIndex) {
@@ -27,7 +38,6 @@ function replacePathUIndex(urlObj, desiredIndex) {
   const replaced = originalPath.replace(/(\/)u\/(\d+)(\/|$)/, `$1u/${desiredIndex}$3`);
   if (replaced !== originalPath) {
     urlObj.pathname = replaced;
-    console.debug("[LinksMaker] path u-index replaced:", { from: originalPath, to: replaced });
   }
 }
 
@@ -39,22 +49,14 @@ function buildProfileSwitchUrl(currentUrlString, desiredIndex) {
     if (isGoogle) {
       replaceAuthUserParam(urlObj, desiredIndex);
       replacePathUIndex(urlObj, desiredIndex);
+      ensureDocsUIndex(urlObj, desiredIndex);
     } else {
       replaceAuthUserParam(urlObj, desiredIndex);
     }
 
-    console.debug("[LinksMaker] buildProfileSwitchUrl", {
-      input: currentUrlString,
-      desiredIndex,
-      output: urlObj.toString(),
-      hostname: urlObj.hostname,
-      pathname: urlObj.pathname,
-      search: urlObj.search
-    });
-
     return urlObj.toString();
   } catch (e) {
-    console.warn("[LinksMaker] Failed to build switch URL:", e, { currentUrlString, desiredIndex });
+    pushLog("warn", "buildProfileSwitchUrl error", { error: String(e), currentUrlString, desiredIndex });
     return null;
   }
 }
@@ -70,14 +72,36 @@ async function getProfiles() {
   });
 }
 
-function findProfileByInput(profiles, input) {
-  if (!input) return null;
-  const lower = String(input).toLowerCase();
-  const asNum = Number(lower);
-  if (!Number.isNaN(asNum)) {
-    return profiles.find((p) => p.authIndex === asNum) || null;
-  }
-  return profiles.find((p) => p.id === lower || p.label.toLowerCase() === lower) || null;
+function parseAuthIndexFromUrl(urlString) {
+  try {
+    const u = new URL(urlString);
+    const q = u.searchParams.get("authuser");
+    if (q !== null && q !== undefined) return Number(q);
+    const m = u.pathname.match(/\/u\/(\d+)/);
+    if (m) return Number(m[1]);
+  } catch {}
+  return null;
+}
+
+function parseGoogleFileId(urlString) {
+  try {
+    const u = new URL(urlString);
+    const host = u.hostname;
+    const path = u.pathname;
+    let m = path.match(/\/(document|spreadsheets|presentation)\/(?:u\/\d+\/)?d\/([^/]+)/);
+    if (host === 'docs.google.com' && m) {
+      return { kind: m[1], id: m[2] };
+    }
+    m = path.match(/\/file\/d\/([^/]+)/);
+    if (host === 'drive.google.com' && m) {
+      return { kind: 'driveFile', id: m[1] };
+    }
+    const qid = u.searchParams.get('id');
+    if (qid && (host.endsWith('google.com'))) {
+      return { kind: 'driveFile', id: qid };
+    }
+  } catch {}
+  return null;
 }
 
 async function getActiveTab() {
@@ -85,10 +109,29 @@ async function getActiveTab() {
   return tab || null;
 }
 
-chrome.action.onClicked.addListener(async (tab) => {
-  if (!tab?.id) return;
+// In-memory and persistent logs
+const LOGS = [];
+const MAX_LOGS = 1000;
+function pushLog(level, message, data) {
+  const entry = { ts: new Date().toISOString(), level, message, data: data ?? null };
+  LOGS.push(entry);
+  if (LOGS.length > MAX_LOGS) LOGS.shift();
+  chrome.storage.local.set({ __lm_logs: LOGS.slice(-MAX_LOGS) });
+}
+
+async function readLogs() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(["__lm_logs"], (items) => {
+      resolve(Array.isArray(items.__lm_logs) ? items.__lm_logs : LOGS);
+    });
+  });
+}
+
+// Clicking the extension icon opens Manage Profiles (Options page)
+chrome.action.onClicked.addListener(async () => {
   try {
-    await chrome.tabs.sendMessage(tab.id, { type: "lm.toggleWidget" });
+    pushLog('info', 'action clicked: opening options');
+    chrome.runtime.openOptionsPage();
   } catch {}
 });
 
@@ -114,21 +157,16 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.sync.get({ profiles: null }, ({ profiles }) => {
     if (!Array.isArray(profiles) || profiles.length === 0) {
-      chrome.storage.sync.set({ profiles: DEFAULT_PROFILES }, () => {
-        if (chrome.runtime.lastError) {
-          console.warn("[LinksMaker] Failed to seed default profiles:", chrome.runtime.lastError);
-        } else {
-          console.info("[LinksMaker] Seeded default profiles", DEFAULT_PROFILES);
-        }
-      });
+      chrome.storage.sync.set({ profiles: DEFAULT_PROFILES });
     }
   });
 
   chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({ id: "lm-root", title: "Open with profile…", contexts: ["page", "frame", "selection", "link", "image", "video", "audio"] });
+    chrome.contextMenus.create({ id: "lm-root", title: "Links Maker", contexts: ["action"] });
     getProfiles().then((profiles) => {
+      chrome.contextMenus.create({ id: "lm-root-open", title: "Open with profile…", contexts: ["page", "frame", "selection", "link", "image", "video", "audio"] });
       profiles.forEach((p) => {
-        chrome.contextMenus.create({ id: `lm-open-${p.authIndex}`, parentId: "lm-root", title: `${p.label} (authuser=${p.authIndex})`, contexts: ["page", "frame", "selection", "link", "image", "video", "audio"] });
+        chrome.contextMenus.create({ id: `lm-open-${p.authIndex}`, parentId: "lm-root-open", title: `${p.label} (authuser=${p.authIndex})`, contexts: ["page", "frame", "selection", "link", "image", "video", "audio"] });
       });
     });
   });
@@ -137,10 +175,11 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "sync" && changes.profiles) {
     chrome.contextMenus.removeAll(() => {
-      chrome.contextMenus.create({ id: "lm-root", title: "Open with profile…", contexts: ["page", "frame", "selection", "link", "image", "video", "audio"] });
+      chrome.contextMenus.create({ id: "lm-root", title: "Links Maker", contexts: ["action"] });
+      chrome.contextMenus.create({ id: "lm-root-open", title: "Open with profile…", contexts: ["page", "frame", "selection", "link", "image", "video", "audio"] });
       getProfiles().then((profiles) => {
         profiles.forEach((p) => {
-          chrome.contextMenus.create({ id: `lm-open-${p.authIndex}`, parentId: "lm-root", title: `${p.label} (authuser=${p.authIndex})`, contexts: ["page", "frame", "selection", "link", "image", "video", "audio"] });
+          chrome.contextMenus.create({ id: `lm-open-${p.authIndex}`, parentId: "lm-root-open", title: `${p.label} (authuser=${p.authIndex})`, contexts: ["page", "frame", "selection", "link", "image", "video", "audio"] });
         });
       });
     });
@@ -161,118 +200,104 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     if (!targetUrl) return;
 
     await chrome.tabs.create({ url: targetUrl, index: (tab && tab.index !== undefined) ? tab.index + 1 : undefined });
-  } catch (e) {
-    console.error("[LinksMaker] contextMenus.onClicked error", e);
-  }
+  } catch (e) { pushLog("error", "contextMenus.onClicked", { error: String(e) }); }
 });
 
-chrome.omnibox.onInputChanged.addListener(async (text, suggest) => {
-  const profiles = await getProfiles();
-  const activeTab = await getActiveTab();
-  const currentUrl = activeTab && activeTab.url ? activeTab.url : "https://accounts.google.com/";
-
-  const suggestions = profiles.map((p) => {
-    const preview = buildProfileSwitchUrl(currentUrl, p.authIndex) || currentUrl;
-    return {
-      content: String(p.authIndex),
-      description: `Switch to <match>${p.label}</match> — <dim>authuser=${p.authIndex}</dim> → <url>${preview}</url>`
-    };
-  });
-
-  suggest(suggestions);
-});
-
-chrome.omnibox.onInputEntered.addListener(async (text, disposition) => {
+async function probeAccess(url, authIndex) {
+  const targetUrl = buildProfileSwitchUrl(url, authIndex);
+  if (!targetUrl) { pushLog("warn", "Access probe skip — bad url", { authIndex, url }); return { status: "unknown", reason: "bad_url" }; }
+  pushLog("info", "Access probe built", { authIndex, method: "GET", url: targetUrl });
   try {
-    const profiles = await getProfiles();
-    const activeTab = await getActiveTab();
-    const currentUrl = activeTab && activeTab.url ? activeTab.url : "https://accounts.google.com/";
-
-    const chosen = findProfileByInput(profiles, text) || profiles[0];
-    const targetUrl = buildProfileSwitchUrl(currentUrl, chosen.authIndex) || currentUrl;
-
-    if (disposition === "currentTab") {
-      if (activeTab?.id) {
-        await chrome.tabs.update(activeTab.id, { url: targetUrl });
-      } else {
-        await chrome.tabs.create({ url: targetUrl });
-      }
-    } else if (disposition === "newForegroundTab") {
-      await chrome.tabs.create({ url: targetUrl, active: true });
-    } else if (disposition === "newBackgroundTab") {
-      await chrome.tabs.create({ url: targetUrl, active: false });
-    } else {
-      await chrome.tabs.create({ url: targetUrl });
-    }
+    const resp = await fetch(targetUrl, { credentials: "include", cache: "no-store", redirect: "follow" });
+    const finalUrl = resp.url || "";
+    let text = "";
+    try { text = await resp.text(); } catch {}
+    const lowered = (text || "").toLowerCase();
+    const isLogin = /accounts\.google\.com|servicelogin|signin/.test(finalUrl) || lowered.includes("sign in");
+    const isDenied = resp.status === 401 || resp.status === 403 || /request\s*access|need\s*access|share\?ths=true/.test(lowered);
+    const classified = (isLogin || isDenied) ? "no_access" : ((resp.status === 200 || resp.status === 204) ? "access" : "unknown");
+    pushLog("info", "Access probe response", { authIndex, statusCode: resp.status, finalUrl, classified });
+    return { status: classified, code: resp.status, finalUrl };
   } catch (e) {
-    console.error("[LinksMaker] omnibox.onInputEntered error", e);
+    pushLog("error", "Access probe error", { authIndex, error: String(e) });
+    return { status: "unknown", reason: "fetch_error" };
   }
-});
-
-chrome.commands.onCommand.addListener(async (command) => {
-  if (command !== "toggle_widget") return;
-  const tab = await getActiveTab();
-  if (!tab?.id) return;
-  try {
-    await chrome.tabs.sendMessage(tab.id, { type: "lm.toggleWidget" });
-  } catch (e) {}
-});
-
-async function fetchListAccounts(url) {
-  const resp = await fetch(url, { credentials: "include", cache: "no-cache" });
-  const status = resp.status;
-  const text = await resp.text();
-  let data = null;
-  try { data = JSON.parse(text); } catch {
-    const cleaned = text.replace(/^\)\]\}'\s*/, '');
-    try { data = JSON.parse(cleaned); } catch {}
-  }
-  return { status, text, data };
 }
 
-async function fetchGoogleAccounts() {
-  try {
-    const urls = [
-      "https://accounts.google.com/ListAccounts?gpsia=1&source=ChromeExtension&json=standard",
-      "https://accounts.google.com/ListAccounts?gpsia=1&source=OneGoogleBar&json=standard"
-    ];
-
-    for (const url of urls) {
-      console.info("[LinksMaker] Import: requesting", url);
-      const { status, text, data } = await fetchListAccounts(url);
-      console.info("[LinksMaker] Import: status", status);
-      const raw = data && (data.accounts || data.Ac || data.users || []);
-      if (Array.isArray(raw) && raw.length > 0) {
-        const accounts = raw.map((a, i) => ({
-          label: a.email || a.displayName || a.gaiaEmail || `Account ${i}`,
-          email: a.email || a.gaiaEmail || null,
-          authIndex: i
-        }));
-        console.info("[LinksMaker] Import: parsed accounts", accounts);
-        return accounts;
-      }
-      console.warn("[LinksMaker] Import: empty payload body=", text.slice(0, 200));
-    }
-
-    return [];
-  } catch (e) {
-    console.warn("[LinksMaker] fetchGoogleAccounts failed", e);
-    return [];
+async function checkAccessForProfiles(url, profiles) {
+  const results = {};
+  for (const p of profiles) {
+    results[p.authIndex] = await probeAccess(url, p.authIndex);
   }
+  return results;
+}
+
+async function probeAccessInPage(tabId, url, authIndex) {
+  const targetUrl = buildProfileSwitchUrl(url, authIndex);
+  if (!targetUrl) { pushLog("warn", "Access probe skip — bad url", { authIndex, url }); return { status: "unknown", reason: "bad_url" }; }
+  pushLog("info", "Access probe built (page)", { authIndex, method: "GET", url: targetUrl });
+  try {
+    const [res] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'ISOLATED',
+      args: [targetUrl],
+      func: async (requestUrl) => {
+        try {
+          const resp = await fetch(requestUrl, { credentials: 'include', redirect: 'follow' });
+          return { ok: true, status: resp.status, finalUrl: resp.url };
+        } catch (e) {
+          return { ok: false, error: String(e) };
+        }
+      }
+    });
+    const r = res?.result || {};
+    if (!r.ok) { pushLog("error", "Access probe page error", { authIndex, error: r.error }); return { status: 'unknown', reason: 'fetch_error' }; }
+    const classified = (r.status === 200 || r.status === 204) ? 'access' : ((r.status === 401 || r.status === 403) ? 'no_access' : 'unknown');
+    pushLog("info", "Access probe response (page)", { authIndex, statusCode: r.status, finalUrl: r.finalUrl, classified });
+    return { status: classified, code: r.status, finalUrl: r.finalUrl };
+  } catch (e) {
+    pushLog("error", "Access probe exec error", { authIndex, error: String(e) });
+    return { status: "unknown", reason: "exec_error" };
+  }
+}
+
+async function checkAccessForProfilesInPage(tabId, url, profiles) {
+  const results = {};
+  for (const p of profiles) {
+    results[p.authIndex] = await probeAccessInPage(tabId, url, p.authIndex);
+  }
+  return results;
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg !== "object") return;
-  if (msg.type === "lm.buildUrl") {
-    const { currentUrl, authIndex } = msg;
-    const out = buildProfileSwitchUrl(currentUrl, Number(authIndex));
-    sendResponse({ ok: Boolean(out), url: out });
-  } else if (msg.type === "lm.fetchAccounts") {
-    fetchGoogleAccounts().then((accts) => sendResponse({ ok: true, accounts: accts }))
-      .catch((e) => {
-        console.warn("[LinksMaker] Import: error", e);
-        sendResponse({ ok: false, accounts: [] });
-      });
+  if (msg.type === "lm.checkAccess") {
+    const { url } = msg;
+    const tabId = sender?.tab?.id;
+    pushLog("info", "Access check begin", { url, tabId });
+    const fileMeta = parseGoogleFileId(url);
+    if (!fileMeta || !tabId) {
+      pushLog("warn", "Access check unsupported", { url, tabId });
+      sendResponse({ ok: true, results: {}, supported: false });
+      return;
+    }
+    getProfiles().then(async (profiles) => {
+      const fresh = await checkAccessForProfilesInPage(tabId, url, profiles);
+      pushLog("info", "Access check end", { url, results: fresh });
+      sendResponse({ ok: true, results: fresh, supported: true, revalidating: false });
+    }).catch((e) => {
+      pushLog("error", "Access check failed", { url, error: String(e) });
+      sendResponse({ ok: false, results: {} });
+    });
     return true;
   }
+});
+
+chrome.commands?.onCommand?.addListener(async (command) => {
+  if (command !== 'toggle_widget') return;
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) return;
+    await chrome.tabs.sendMessage(tab.id, { type: 'lm.toggleWidget' }).catch(() => {});
+  } catch {}
 });

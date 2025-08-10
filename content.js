@@ -7,6 +7,12 @@
   const isGoogle = /(^|\.)google\.com$/.test(host) || /(^|\.)cloud\.google\.com$/.test(host);
   if (!isGoogle) return;
 
+  const isDocsFile = () => host === 'docs.google.com' && (/\/document\//.test(location.pathname) || /\/spreadsheets\//.test(location.pathname) || /\/presentation\//.test(location.pathname));
+  const isDriveFile = () => host === 'drive.google.com' && (/\/file\//.test(location.pathname) || /open\?id=/.test(location.search));
+  const supportsAccessProbe = () => isDocsFile() || isDriveFile();
+
+  function assetUrl(name) { return chrome.runtime.getURL(name); }
+
   function getFaviconUrl() {
     const link = document.querySelector('link[rel~="icon"]') || document.querySelector('link[rel="shortcut icon"]');
     if (link?.href) return link.href;
@@ -71,7 +77,6 @@
   }
 
   function detectActiveAuthIndex(profiles) {
-    // Prefer URL; fallback to email match
     const fromUrl = parseAuthIndexFromUrl(location.href);
     if (fromUrl !== null && !Number.isNaN(fromUrl)) return fromUrl;
     const scanned = scanCurrentGoogleAccount();
@@ -100,28 +105,27 @@
   panel.style.top = "10%";
   panel.style.left = "50%";
   panel.style.transform = "translateX(-50%)";
-  panel.style.width = "420px"; // slightly bigger
+  panel.style.width = "420px";
   panel.style.maxWidth = "92vw";
   panel.style.background = "#fff";
   panel.style.color = "#000";
   panel.style.borderRadius = "12px";
   panel.style.boxShadow = "0 24px 72px rgba(0,0,0,0.28)";
-  panel.style.padding = "24px"; // larger padding
+  panel.style.padding = "24px";
   panel.style.fontFamily = "Poppins, Satoshi, system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
 
-  // Top website card (no carousel)
   const topCard = document.createElement("div");
   topCard.style.display = "flex";
   topCard.style.alignItems = "center";
   topCard.style.gap = "14px";
   topCard.style.background = "#f3f4f6";
-  topCard.style.padding = "16px 18px"; // bigger
-  topCard.style.borderRadius = "12px"; // bigger radius
+  topCard.style.padding = "16px 18px";
+  topCard.style.borderRadius = "12px";
   topCard.style.marginBottom = "16px";
 
   const siteIcon = document.createElement("img");
   siteIcon.src = getFaviconUrl();
-  siteIcon.style.width = "32px"; siteIcon.style.height = "32px"; siteIcon.style.borderRadius = "8px"; // bigger
+  siteIcon.style.width = "32px"; siteIcon.style.height = "32px"; siteIcon.style.borderRadius = "8px";
   const siteTitle = document.createElement("div");
   siteTitle.textContent = document.title || location.hostname;
   siteTitle.style.fontWeight = "700";
@@ -132,20 +136,46 @@
   siteInfo.appendChild(siteTitle); siteInfo.appendChild(siteSub);
   topCard.appendChild(siteIcon); topCard.appendChild(siteInfo);
 
-  // Title
   const title = document.createElement("div");
   title.textContent = "Switch Profiles";
   title.style.fontWeight = "700";
   title.style.margin = "12px 0 6px";
 
-  // Connections list (our profiles)
+  const checkBtn = document.createElement("button");
+  checkBtn.textContent = "Check access";
+  checkBtn.style.border = "1px solid #d1d5db";
+  checkBtn.style.background = "#fff";
+  checkBtn.style.borderRadius = "999px";
+  checkBtn.style.padding = "6px 10px";
+  checkBtn.style.cursor = "pointer";
+  if (!(isDocsFile() || isDriveFile())) checkBtn.style.display = 'none';
+
+  const titleRow = document.createElement("div");
+  titleRow.style.display = "flex";
+  titleRow.style.alignItems = "center";
+  titleRow.style.justifyContent = "space-between";
+  titleRow.appendChild(title);
+  titleRow.appendChild(checkBtn);
+
   const list = document.createElement("div");
   list.style.marginTop = "12px";
   list.style.display = "grid";
-  list.style.gap = "12px"; // larger gap
+  list.style.gap = "12px";
 
   let displaySettings = { showAvatars: true, showEmails: true };
   let activeIdxCache = null;
+  let latestResults = {};
+  let loadingByIndex = {};
+
+  function createSpinner() {
+    const s = document.createElement('div');
+    s.style.width = '20px'; s.style.height = '20px'; s.style.border = '2px solid #e5e7eb'; s.style.borderTopColor = '#111'; s.style.borderRadius = '999px'; s.style.animation = 'lmspin 0.8s linear infinite';
+    return s;
+  }
+
+  const style = document.createElement('style');
+  style.textContent = '@keyframes lmspin { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }';
+  document.documentElement.appendChild(style);
 
   function createRow(profile) {
     const row = document.createElement("div");
@@ -159,9 +189,7 @@
     left.style.gap = "12px";
 
     const dot = document.createElement("span");
-    dot.style.width = "12px"; // bigger indicator
-    dot.style.height = "12px";
-    dot.style.borderRadius = "999px";
+    dot.style.width = "12px"; dot.style.height = "12px"; dot.style.borderRadius = "999px";
     const isActive = activeIdxCache !== null && activeIdxCache === profile.authIndex;
     dot.style.background = isActive ? "#22c55e" : "#d1d5db";
 
@@ -171,9 +199,7 @@
       const providerIcon = document.createElement("img");
       providerIcon.src = profile.photoUrl || getFaviconUrl();
       providerIcon.alt = "profile";
-      providerIcon.style.width = "22px"; // bigger avatar
-      providerIcon.style.height = "22px";
-      providerIcon.style.borderRadius = profile.photoUrl ? "999px" : "6px";
+      providerIcon.style.width = "22px"; providerIcon.style.height = "22px"; providerIcon.style.borderRadius = profile.photoUrl ? "999px" : "6px";
       left.appendChild(providerIcon);
     }
 
@@ -186,28 +212,59 @@
     if (displaySettings.showEmails && profile.email) {
       const email = document.createElement("div");
       email.textContent = profile.email;
-      email.style.fontSize = "12px"; // smaller, not bold
-      email.style.color = "#6b7280";
+      email.style.fontSize = "12px"; email.style.color = "#6b7280";
       textCol.appendChild(email);
     }
 
     left.appendChild(textCol);
 
+    const right = document.createElement("div");
+    right.style.display = 'flex'; right.style.gap = '8px'; right.style.alignItems = 'center';
+
+    const statusBadge = document.createElement('img');
+    statusBadge.style.width = '20px';
+    statusBadge.style.height = '20px';
+    statusBadge.alt = 'status';
+
+    const spinner = createSpinner();
+
+    const applyStatus = (status) => {
+      if (loadingByIndex[profile.authIndex]) {
+        statusBadge.style.display = 'none';
+        right.contains(spinner) || right.appendChild(spinner);
+      } else {
+        spinner.remove();
+        statusBadge.style.display = '';
+        if (status === 'access') {
+          statusBadge.src = assetUrl('Checkmark.png'); statusBadge.title = 'Access';
+        } else if (status === 'no_access') {
+          statusBadge.src = assetUrl('Cross.png'); statusBadge.title = 'No access';
+        } else {
+          statusBadge.src = assetUrl('Warning.png'); statusBadge.title = 'Unknown';
+        }
+      }
+    };
+
+    const status = latestResults[profile.authIndex]?.status;
+    applyStatus(status);
+
+    right.appendChild(statusBadge);
+
     const action = document.createElement("button");
     action.textContent = "Switch";
-    action.style.border = "1px solid #d1d5db";
-    action.style.background = "#fff";
-    action.style.borderRadius = "999px";
-    action.style.padding = "8px 14px"; // larger button
-    action.style.cursor = "pointer";
+    action.style.border = "1px solid #d1d5db"; action.style.background = "#fff"; action.style.borderRadius = "999px"; action.style.padding = "8px 14px"; action.style.cursor = "pointer";
     action.addEventListener("click", () => { const target = buildUrl(location.href, profile.authIndex); location.href = target; });
+    right.appendChild(action);
 
-    row.appendChild(left); row.appendChild(action);
+    row.appendChild(left); row.appendChild(right);
+
+    // Expose a method to update this row later
+    row.__applyStatus = applyStatus;
     return row;
   }
 
   panel.appendChild(topCard);
-  panel.appendChild(title);
+  panel.appendChild(titleRow);
   panel.appendChild(list);
 
   modal.appendChild(backdrop);
@@ -215,12 +272,40 @@
   document.documentElement.appendChild(modal);
 
   let profilesCache = [];
+  const indexToRow = new Map();
 
   function render(profiles) {
     profilesCache = profiles;
+    indexToRow.clear();
     activeIdxCache = detectActiveAuthIndex(profilesCache);
     list.innerHTML = "";
-    profiles.forEach((p) => list.appendChild(createRow(p)));
+    profiles.forEach((p) => {
+      const row = createRow(p);
+      list.appendChild(row);
+      indexToRow.set(p.authIndex, row);
+    });
+  }
+
+  function setLoadingState(isLoading) {
+    checkBtn.disabled = isLoading;
+    profilesCache.forEach((p) => {
+      loadingByIndex[p.authIndex] = isLoading;
+      const row = indexToRow.get(p.authIndex);
+      row?.__applyStatus(latestResults[p.authIndex]?.status);
+    });
+  }
+
+  function triggerAccessCheck() {
+    if (!(isDocsFile() || isDriveFile())) return;
+    console.log('[LinksMaker:Content] check start', location.href);
+    setLoadingState(true);
+    chrome.runtime.sendMessage({ type: 'lm.checkAccess', url: location.href }, (res) => {
+      console.log('[LinksMaker:Content] check response', res);
+      setLoadingState(false);
+      if (!res?.ok) return;
+      latestResults = res.results || {};
+      profilesCache.forEach((p) => indexToRow.get(p.authIndex)?.__applyStatus(latestResults[p.authIndex]?.status));
+    });
   }
 
   function toggle(show) {
@@ -242,7 +327,13 @@
       ];
       render(data);
     });
+
+    if (isDocsFile() || isDriveFile()) {
+      setTimeout(() => triggerAccessCheck(), 800);
+    }
   }
+
+  checkBtn.addEventListener('click', () => triggerAccessCheck());
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (!msg || typeof msg !== "object") return;

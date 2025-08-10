@@ -9,7 +9,8 @@
     "tabs",
     "activeTab",
     "contextMenus",
-    "scripting"
+    "scripting",
+    "downloads"
   ],
   "host_permissions": ["https://*/*", "http://*/*"],
   "background": { "service_worker": "background.js" },
@@ -29,6 +30,12 @@
       "js": ["content.js"],
       "css": ["content.css"],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["Checkmark.png", "Cross.png", "Warning.png"],
+      "matches": ["*://*/*"]
     }
   ]
 }
