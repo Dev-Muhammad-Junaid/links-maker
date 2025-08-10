@@ -12,7 +12,7 @@
 
   // ---------- Socials: minimal icons-only bar ----------
   if (isSocial) {
-    const STORAGE_KEY = `__lm_social_pos__:${location.hostname}`;
+    const STORAGE_KEY = `__lm_social_pos__GLOBAL__`;
 
     const socialBar = document.createElement('div');
     socialBar.style.position = 'fixed';
@@ -68,7 +68,7 @@
       document.removeEventListener('mouseup', onMouseUp);
       handle.style.cursor = 'grab';
       handle.style.opacity = '0';
-      // Persist position
+      // Persist position (GLOBAL)
       const topPx = parseInt(socialBar.style.top || '16', 10) || 16;
       const leftPx = parseInt(socialBar.style.left || `${window.innerWidth - socialBar.offsetWidth - 16}`, 10) || 16;
       chrome.storage.local.set({ [STORAGE_KEY]: { top: topPx, left: leftPx } });
@@ -158,7 +158,7 @@
     socialBar.appendChild(row);
     document.documentElement.appendChild(socialBar);
 
-    // Restore last position
+    // Restore last position (GLOBAL)
     chrome.storage.local.get([STORAGE_KEY], (items) => {
       const pos = items[STORAGE_KEY];
       if (pos && typeof pos.top === 'number' && typeof pos.left === 'number') {
