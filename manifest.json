@@ -33,7 +33,10 @@
         "*://*.facebook.com/*",
         "*://*.instagram.com/*",
         "*://*.snapchat.com/*",
-        "*://*.tiktok.com/*"
+        "*://*.tiktok.com/*",
+        "*://*.linkedin.com/*",
+        "*://*.x.com/*",
+        "*://*.twitter.com/*"
       ],
       "js": ["content.js"],
       "css": ["content.css"],

@@ -6,7 +6,7 @@
   const host = location.hostname;
   const isGoogle = /(^|\.)google\.com$/.test(host) || /(^|\.)cloud\.google\.com$/.test(host);
   const isYouTube = /(^|\.)youtube\.com$/.test(host);
-  const isSocial = /(^|\.)facebook\.com$/.test(host) || /(^|\.)instagram\.com$/.test(host) || /(^|\.)snapchat\.com$/.test(host) || /(^|\.)tiktok\.com$/.test(host);
+  const isSocial = /(^|\.)facebook\.com$/.test(host) || /(^|\.)instagram\.com$/.test(host) || /(^|\.)snapchat\.com$/.test(host) || /(^|\.)tiktok\.com$/.test(host) || /(^|\.)linkedin\.com$/.test(host) || /(^|\.)x\.com$/.test(host) || /(^|\.)twitter\.com$/.test(host);
   const isSupportedHost = isGoogle || isYouTube || isSocial;
   if (!isSupportedHost) return;
 
@@ -95,7 +95,9 @@
       { name: 'Facebook', url: 'https://www.facebook.com/', host: 'facebook.com', icon: 'https://www.facebook.com/favicon.ico' },
       { name: 'Instagram', url: 'https://www.instagram.com/', host: 'instagram.com', icon: 'https://www.instagram.com/favicon.ico' },
       { name: 'Snapchat', url: 'https://www.snapchat.com/', host: 'snapchat.com', icon: 'https://www.snapchat.com/favicon.ico' },
-      { name: 'TikTok', url: 'https://www.tiktok.com/', host: 'tiktok.com', icon: 'https://www.tiktok.com/favicon.ico' }
+      { name: 'TikTok', url: 'https://www.tiktok.com/', host: 'tiktok.com', icon: 'https://www.tiktok.com/favicon.ico' },
+      { name: 'LinkedIn', url: 'https://www.linkedin.com/', host: 'linkedin.com', icon: 'https://www.linkedin.com/favicon.ico' },
+      { name: 'X', url: 'https://x.com/', host: 'x.com', icon: 'https://abs.twimg.com/favicons/twitter.ico' }
     ];
 
     function makeSocialAnchor(s, idx) {
