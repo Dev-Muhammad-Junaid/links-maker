@@ -5,7 +5,9 @@
 
   const host = location.hostname;
   const isGoogle = /(^|\.)google\.com$/.test(host) || /(^|\.)cloud\.google\.com$/.test(host);
-  if (!isGoogle) return;
+  const isYouTube = /(^|\.)youtube\.com$/.test(host);
+  const isSupportedHost = isGoogle || isYouTube;
+  if (!isSupportedHost) return;
 
   const isDocsFile = () => host === 'docs.google.com' && (/\/document\//.test(location.pathname) || /\/spreadsheets\//.test(location.pathname) || /\/presentation\//.test(location.pathname));
   const isDriveFile = () => host === 'drive.google.com' && (/\/file\//.test(location.pathname) || /open\?id=/.test(location.search));
@@ -29,6 +31,13 @@
       console.warn("[LinksMaker:Content] Failed to build url", e);
       return currentUrlString;
     }
+  }
+
+  function buildAccountChooserUrl(continueUrl, authIndex) {
+    const base = 'https://accounts.google.com/AccountChooser';
+    const params = new URLSearchParams({ continue: continueUrl });
+    if (authIndex !== undefined && authIndex !== null) params.set('authuser', String(authIndex));
+    return `${base}?${params.toString()}`;
   }
 
   function parseAuthIndexFromUrl(urlStr) {
@@ -142,13 +151,18 @@
   title.style.margin = "12px 0 6px";
 
   const checkBtn = document.createElement("button");
-  checkBtn.textContent = "Check access";
   checkBtn.style.border = "1px solid #d1d5db";
   checkBtn.style.background = "#fff";
   checkBtn.style.borderRadius = "999px";
   checkBtn.style.padding = "6px 10px";
   checkBtn.style.cursor = "pointer";
-  if (!(isDocsFile() || isDriveFile())) checkBtn.style.display = 'none';
+  if (isYouTube) {
+    checkBtn.textContent = 'Choose';
+  } else if (supportsAccessProbe()) {
+    checkBtn.textContent = 'Check access';
+  } else {
+    checkBtn.style.display = 'none';
+  }
 
   const titleRow = document.createElement("div");
   titleRow.style.display = "flex";
@@ -221,14 +235,20 @@
     const right = document.createElement("div");
     right.style.display = 'flex'; right.style.gap = '8px'; right.style.alignItems = 'center';
 
-    const statusBadge = document.createElement('img');
-    statusBadge.style.width = '20px';
-    statusBadge.style.height = '20px';
-    statusBadge.alt = 'status';
+    const showStatus = supportsAccessProbe();
+    let statusBadge = null;
+    let spinner = null;
 
-    const spinner = createSpinner();
+    if (showStatus) {
+      statusBadge = document.createElement('img');
+      statusBadge.style.width = '20px';
+      statusBadge.style.height = '20px';
+      statusBadge.alt = 'status';
+      spinner = createSpinner();
+    }
 
     const applyStatus = (status) => {
+      if (!showStatus) return;
       if (loadingByIndex[profile.authIndex]) {
         statusBadge.style.display = 'none';
         right.contains(spinner) || right.appendChild(spinner);
@@ -248,12 +268,21 @@
     const status = latestResults[profile.authIndex]?.status;
     applyStatus(status);
 
-    right.appendChild(statusBadge);
+    if (showStatus) right.appendChild(statusBadge);
 
     const action = document.createElement("button");
     action.textContent = "Switch";
     action.style.border = "1px solid #d1d5db"; action.style.background = "#fff"; action.style.borderRadius = "999px"; action.style.padding = "8px 14px"; action.style.cursor = "pointer";
-    action.addEventListener("click", () => { const target = buildUrl(location.href, profile.authIndex); location.href = target; });
+    action.addEventListener("click", () => {
+      if (isYouTube) {
+        // Quick switch via authuser in URL as requested
+        const target = buildUrl(location.href, profile.authIndex);
+        location.href = target;
+      } else {
+        const target = buildUrl(location.href, profile.authIndex);
+        location.href = target;
+      }
+    });
     right.appendChild(action);
 
     row.appendChild(left); row.appendChild(right);
@@ -333,7 +362,14 @@
     }
   }
 
-  checkBtn.addEventListener('click', () => triggerAccessCheck());
+  checkBtn.addEventListener('click', () => {
+    if (isYouTube) {
+      const chooser = buildAccountChooserUrl(location.href, null);
+      location.href = chooser;
+    } else {
+      triggerAccessCheck();
+    }
+  });
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (!msg || typeof msg !== "object") return;
