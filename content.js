@@ -12,6 +12,8 @@
 
   // ---------- Socials: minimal icons-only bar ----------
   if (isSocial) {
+    const STORAGE_KEY = `__lm_social_pos__:${location.hostname}`;
+
     const socialBar = document.createElement('div');
     socialBar.style.position = 'fixed';
     socialBar.style.top = '16px';
@@ -26,11 +28,68 @@
     socialBar.style.padding = '10px 12px';
     socialBar.style.fontFamily = 'Poppins, Satoshi, system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
     socialBar.style.backdropFilter = 'saturate(180%) blur(8px)';
+    socialBar.style.userSelect = 'none';
 
     const row = document.createElement('div');
     row.style.display = 'flex';
     row.style.alignItems = 'center';
-    row.style.gap = '14px';
+    row.style.gap = '12px';
+
+    // Drag handle (shows on hover)
+    const handle = document.createElement('div');
+    handle.title = 'Drag to move';
+    handle.style.width = '14px';
+    handle.style.height = '28px';
+    handle.style.marginRight = '8px';
+    handle.style.borderRadius = '6px';
+    handle.style.background = 'linear-gradient(180deg, #e5e7eb, #d1d5db)';
+    handle.style.opacity = '0';
+    handle.style.transition = 'opacity 0.15s ease';
+    handle.style.cursor = 'grab';
+
+    socialBar.addEventListener('mouseenter', () => { handle.style.opacity = '1'; });
+    socialBar.addEventListener('mouseleave', () => { if (!isDragging) handle.style.opacity = '0'; });
+
+    let isDragging = false; let dragOffsetX = 0; let dragOffsetY = 0;
+
+    function onMouseMove(e) {
+      if (!isDragging) return;
+      const newLeft = e.clientX - dragOffsetX;
+      const newTop = e.clientY - dragOffsetY;
+      socialBar.style.left = `${Math.max(8, Math.min(window.innerWidth - socialBar.offsetWidth - 8, newLeft))}px`;
+      socialBar.style.top = `${Math.max(8, Math.min(window.innerHeight - socialBar.offsetHeight - 8, newTop))}px`;
+      socialBar.style.right = '';
+    }
+
+    function onMouseUp() {
+      if (!isDragging) return;
+      isDragging = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      handle.style.cursor = 'grab';
+      handle.style.opacity = '0';
+      // Persist position
+      const topPx = parseInt(socialBar.style.top || '16', 10) || 16;
+      const leftPx = parseInt(socialBar.style.left || `${window.innerWidth - socialBar.offsetWidth - 16}`, 10) || 16;
+      chrome.storage.local.set({ [STORAGE_KEY]: { top: topPx, left: leftPx } });
+    }
+
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      // Ensure we have left-based positioning to start dragging
+      if (!socialBar.style.left) {
+        const rect = socialBar.getBoundingClientRect();
+        socialBar.style.left = `${rect.left}px`;
+        socialBar.style.top = `${rect.top}px`;
+        socialBar.style.right = '';
+      }
+      isDragging = true;
+      handle.style.cursor = 'grabbing';
+      dragOffsetX = e.clientX - socialBar.getBoundingClientRect().left;
+      dragOffsetY = e.clientY - socialBar.getBoundingClientRect().top;
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    });
 
     const socials = [
       { name: 'Facebook', url: 'https://www.facebook.com/', host: 'facebook.com', icon: 'https://www.facebook.com/favicon.ico' },
@@ -39,14 +98,19 @@
       { name: 'TikTok', url: 'https://www.tiktok.com/', host: 'tiktok.com', icon: 'https://www.tiktok.com/favicon.ico' }
     ];
 
-    socials.forEach((s) => {
+    function makeSocialAnchor(s, idx) {
       const a = document.createElement('a');
       a.href = s.url;
       a.title = s.name;
-      a.addEventListener('click', (e) => {
-        e.preventDefault();
-        chrome.runtime.sendMessage({ type: 'lm.openOrActivateSocial', url: s.url, host: s.host });
-      });
+      a.setAttribute('role', 'button');
+      a.setAttribute('tabindex', '0');
+      a.style.display = 'flex';
+      a.style.alignItems = 'center';
+      a.style.justifyContent = 'center';
+      a.style.padding = '6px';
+      a.style.borderRadius = '10px';
+      a.style.outline = 'none';
+
       const img = document.createElement('img');
       img.src = s.icon;
       img.alt = s.name;
@@ -55,14 +119,62 @@
       img.style.borderRadius = '8px';
       img.style.display = 'block';
       a.appendChild(img);
-      row.appendChild(a);
-    });
+
+      const applyFocus = (focused) => {
+        a.style.background = focused ? '#f3f4f6' : 'transparent';
+      };
+
+      a.addEventListener('focus', () => applyFocus(true));
+      a.addEventListener('blur', () => applyFocus(false));
+      a.addEventListener('mouseenter', () => applyFocus(true));
+      a.addEventListener('mouseleave', () => applyFocus(document.activeElement === a));
+
+      function openOrActivate() {
+        chrome.runtime.sendMessage({ type: 'lm.openOrActivateSocial', url: s.url, host: s.host });
+      }
+
+      a.addEventListener('click', (e) => { e.preventDefault(); openOrActivate(); });
+      a.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); openOrActivate(); }
+        if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          const next = a.nextElementSibling || row.querySelector('a');
+          next && next.focus();
+        }
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          const prev = a.previousElementSibling || row.querySelectorAll('a')[row.querySelectorAll('a').length - 1];
+          prev && prev.focus();
+        }
+      });
+
+      return a;
+    }
+
+    // Append handle first, then icons
+    row.appendChild(handle);
+    socials.forEach((s, i) => row.appendChild(makeSocialAnchor(s, i)));
 
     socialBar.appendChild(row);
     document.documentElement.appendChild(socialBar);
 
+    // Restore last position
+    chrome.storage.local.get([STORAGE_KEY], (items) => {
+      const pos = items[STORAGE_KEY];
+      if (pos && typeof pos.top === 'number' && typeof pos.left === 'number') {
+        socialBar.style.top = `${pos.top}px`;
+        socialBar.style.left = `${pos.left}px`;
+        socialBar.style.right = '';
+      }
+    });
+
     function toggle(show) {
       socialBar.style.display = show ? 'block' : 'none';
+      if (show) {
+        // Focus first icon for keyboard navigation
+        const first = row.querySelector('a');
+        first && first.focus();
+      }
     }
 
     chrome.runtime.onMessage.addListener((msg) => {
