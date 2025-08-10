@@ -1,4 +1,4 @@
-/* Links Maker — Content Script (modal layout + account capture, no carousel) */
+/* Links Maker — Content Script (modal for Google/YouTube; minimal bar for socials) */
 (function () {
   if (window.__links_maker_injected__) return;
   window.__links_maker_injected__ = true;
@@ -6,9 +6,75 @@
   const host = location.hostname;
   const isGoogle = /(^|\.)google\.com$/.test(host) || /(^|\.)cloud\.google\.com$/.test(host);
   const isYouTube = /(^|\.)youtube\.com$/.test(host);
-  const isSupportedHost = isGoogle || isYouTube;
+  const isSocial = /(^|\.)facebook\.com$/.test(host) || /(^|\.)instagram\.com$/.test(host) || /(^|\.)snapchat\.com$/.test(host) || /(^|\.)tiktok\.com$/.test(host);
+  const isSupportedHost = isGoogle || isYouTube || isSocial;
   if (!isSupportedHost) return;
 
+  // ---------- Socials: minimal icons-only bar ----------
+  if (isSocial) {
+    const socialBar = document.createElement('div');
+    socialBar.style.position = 'fixed';
+    socialBar.style.top = '16px';
+    socialBar.style.right = '16px';
+    socialBar.style.zIndex = '2147483647';
+    socialBar.style.display = 'none';
+    socialBar.style.background = '#fff';
+    socialBar.style.color = '#000';
+    socialBar.style.border = '1px solid #e5e7eb';
+    socialBar.style.borderRadius = '999px';
+    socialBar.style.boxShadow = '0 8px 24px rgba(0,0,0,0.15)';
+    socialBar.style.padding = '8px 10px';
+    socialBar.style.fontFamily = 'Poppins, Satoshi, system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+    socialBar.style.backdropFilter = 'saturate(180%) blur(8px)';
+
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '10px';
+
+    const socials = [
+      { name: 'Facebook', url: 'https://www.facebook.com/', icon: 'https://www.facebook.com/favicon.ico' },
+      { name: 'Instagram', url: 'https://www.instagram.com/', icon: 'https://www.instagram.com/favicon.ico' },
+      { name: 'Snapchat', url: 'https://www.snapchat.com/', icon: 'https://www.snapchat.com/favicon.ico' },
+      { name: 'TikTok', url: 'https://www.tiktok.com/', icon: 'https://www.tiktok.com/favicon.ico' }
+    ];
+
+    socials.forEach((s) => {
+      const a = document.createElement('a');
+      a.href = s.url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.title = s.name;
+      const img = document.createElement('img');
+      img.src = s.icon;
+      img.alt = s.name;
+      img.style.width = '22px';
+      img.style.height = '22px';
+      img.style.borderRadius = '6px';
+      img.style.display = 'block';
+      a.appendChild(img);
+      row.appendChild(a);
+    });
+
+    socialBar.appendChild(row);
+    document.documentElement.appendChild(socialBar);
+
+    function toggle(show) {
+      socialBar.style.display = show ? 'block' : 'none';
+    }
+
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (!msg || typeof msg !== 'object') return;
+      if (msg.type === 'lm.toggleWidget') {
+        const isHidden = socialBar.style.display === 'none' || socialBar.style.display === '';
+        toggle(isHidden);
+      }
+    });
+
+    return; // Do not proceed to Google/YouTube UI when on socials
+  }
+
+  // ---------- Google/YouTube: full modal ----------
   const isDocsFile = () => host === 'docs.google.com' && (/\/document\//.test(location.pathname) || /\/spreadsheets\//.test(location.pathname) || /\/presentation\//.test(location.pathname));
   const isDriveFile = () => host === 'drive.google.com' && (/\/file\//.test(location.pathname) || /open\?id=/.test(location.search));
   const supportsAccessProbe = () => isDocsFile() || isDriveFile();
@@ -171,37 +237,6 @@
   titleRow.appendChild(title);
   titleRow.appendChild(checkBtn);
 
-  // Social quick links row
-  const socialRow = document.createElement('div');
-  socialRow.style.display = 'flex';
-  socialRow.style.alignItems = 'center';
-  socialRow.style.gap = '10px';
-  socialRow.style.marginTop = '8px';
-
-  const socials = [
-    { name: 'Facebook', url: 'https://www.facebook.com/', icon: 'https://www.facebook.com/favicon.ico' },
-    { name: 'Instagram', url: 'https://www.instagram.com/', icon: 'https://www.instagram.com/favicon.ico' },
-    { name: 'Snapchat', url: 'https://www.snapchat.com/', icon: 'https://www.snapchat.com/favicon.ico' },
-    { name: 'TikTok', url: 'https://www.tiktok.com/', icon: 'https://www.tiktok.com/favicon.ico' }
-  ];
-
-  socials.forEach((s) => {
-    const a = document.createElement('a');
-    a.href = s.url;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    a.title = s.name;
-    const img = document.createElement('img');
-    img.src = s.icon;
-    img.alt = s.name;
-    img.style.width = '22px';
-    img.style.height = '22px';
-    img.style.borderRadius = '6px';
-    img.style.display = 'block';
-    a.appendChild(img);
-    socialRow.appendChild(a);
-  });
-
   const list = document.createElement("div");
   list.style.marginTop = "12px";
   list.style.display = "grid";
@@ -305,21 +340,25 @@
     action.textContent = "Switch";
     action.style.border = "1px solid #d1d5db"; action.style.background = "#fff"; action.style.borderRadius = "999px"; action.style.padding = "8px 14px"; action.style.cursor = "pointer";
     action.addEventListener("click", () => {
-      const target = buildUrl(location.href, profile.authIndex);
-      location.href = target;
+      if (isYouTube) {
+        // Fast switch via authuser in URL
+        const target = buildUrl(location.href, profile.authIndex);
+        location.href = target;
+      } else {
+        const target = buildUrl(location.href, profile.authIndex);
+        location.href = target;
+      }
     });
     right.appendChild(action);
 
     row.appendChild(left); row.appendChild(right);
 
-    // Expose a method to update this row later
     row.__applyStatus = applyStatus;
     return row;
   }
 
   panel.appendChild(topCard);
   panel.appendChild(titleRow);
-  panel.appendChild(socialRow);
   panel.appendChild(list);
 
   modal.appendChild(backdrop);
