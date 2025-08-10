@@ -23,34 +23,36 @@
     socialBar.style.border = '1px solid #e5e7eb';
     socialBar.style.borderRadius = '999px';
     socialBar.style.boxShadow = '0 8px 24px rgba(0,0,0,0.15)';
-    socialBar.style.padding = '8px 10px';
+    socialBar.style.padding = '10px 12px';
     socialBar.style.fontFamily = 'Poppins, Satoshi, system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
     socialBar.style.backdropFilter = 'saturate(180%) blur(8px)';
 
     const row = document.createElement('div');
     row.style.display = 'flex';
     row.style.alignItems = 'center';
-    row.style.gap = '10px';
+    row.style.gap = '14px';
 
     const socials = [
-      { name: 'Facebook', url: 'https://www.facebook.com/', icon: 'https://www.facebook.com/favicon.ico' },
-      { name: 'Instagram', url: 'https://www.instagram.com/', icon: 'https://www.instagram.com/favicon.ico' },
-      { name: 'Snapchat', url: 'https://www.snapchat.com/', icon: 'https://www.snapchat.com/favicon.ico' },
-      { name: 'TikTok', url: 'https://www.tiktok.com/', icon: 'https://www.tiktok.com/favicon.ico' }
+      { name: 'Facebook', url: 'https://www.facebook.com/', host: 'facebook.com', icon: 'https://www.facebook.com/favicon.ico' },
+      { name: 'Instagram', url: 'https://www.instagram.com/', host: 'instagram.com', icon: 'https://www.instagram.com/favicon.ico' },
+      { name: 'Snapchat', url: 'https://www.snapchat.com/', host: 'snapchat.com', icon: 'https://www.snapchat.com/favicon.ico' },
+      { name: 'TikTok', url: 'https://www.tiktok.com/', host: 'tiktok.com', icon: 'https://www.tiktok.com/favicon.ico' }
     ];
 
     socials.forEach((s) => {
       const a = document.createElement('a');
       a.href = s.url;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
       a.title = s.name;
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        chrome.runtime.sendMessage({ type: 'lm.openOrActivateSocial', url: s.url, host: s.host });
+      });
       const img = document.createElement('img');
       img.src = s.icon;
       img.alt = s.name;
-      img.style.width = '22px';
-      img.style.height = '22px';
-      img.style.borderRadius = '6px';
+      img.style.width = '32px';
+      img.style.height = '32px';
+      img.style.borderRadius = '8px';
       img.style.display = 'block';
       a.appendChild(img);
       row.appendChild(a);
@@ -341,7 +343,6 @@
     action.style.border = "1px solid #d1d5db"; action.style.background = "#fff"; action.style.borderRadius = "999px"; action.style.padding = "8px 14px"; action.style.cursor = "pointer";
     action.addEventListener("click", () => {
       if (isYouTube) {
-        // Fast switch via authuser in URL
         const target = buildUrl(location.href, profile.authIndex);
         location.href = target;
       } else {

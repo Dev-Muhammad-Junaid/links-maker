@@ -203,6 +203,24 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   } catch (e) { pushLog("error", "contextMenus.onClicked", { error: String(e) }); }
 });
 
+// Open or activate existing social tab
+async function openOrActivateSocial(url, host) {
+  try {
+    const tabs = await chrome.tabs.query({ url: `*://*.${host}/*` });
+    if (tabs && tabs.length > 0) {
+      const t = tabs[0];
+      await chrome.tabs.update(t.id, { active: true });
+      await chrome.windows.update(t.windowId, { focused: true });
+      return { ok: true, activated: true, tabId: t.id };
+    }
+    const created = await chrome.tabs.create({ url });
+    return { ok: true, created: true, tabId: created.id };
+  } catch (e) {
+    pushLog('error', 'openOrActivateSocial failed', { error: String(e), url, host });
+    return { ok: false, error: String(e) };
+  }
+}
+
 async function probeAccess(url, authIndex) {
   const targetUrl = buildProfileSwitchUrl(url, authIndex);
   if (!targetUrl) { pushLog("warn", "Access probe skip — bad url", { authIndex, url }); return { status: "unknown", reason: "bad_url" }; }
@@ -279,7 +297,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!fileMeta || !tabId) {
       pushLog("warn", "Access check unsupported", { url, tabId });
       sendResponse({ ok: true, results: {}, supported: false });
-      return;
+      return true;
     }
     getProfiles().then(async (profiles) => {
       const fresh = await checkAccessForProfilesInPage(tabId, url, profiles);
@@ -289,6 +307,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       pushLog("error", "Access check failed", { url, error: String(e) });
       sendResponse({ ok: false, results: {} });
     });
+    return true;
+  }
+  if (msg.type === 'lm.openOrActivateSocial') {
+    openOrActivateSocial(msg.url, msg.host).then((r) => sendResponse(r));
     return true;
   }
 });
