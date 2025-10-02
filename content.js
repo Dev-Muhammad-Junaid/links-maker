@@ -1,11 +1,225 @@
-/* Links Maker — Content Script (modal layout + account capture, no carousel) */
+/* Links Maker — Content Script (modal for Google/YouTube; minimal bar for socials) */
 (function () {
   if (window.__links_maker_injected__) return;
   window.__links_maker_injected__ = true;
 
   const host = location.hostname;
   const isGoogle = /(^|\.)google\.com$/.test(host) || /(^|\.)cloud\.google\.com$/.test(host);
-  if (!isGoogle) return;
+  const isYouTube = /(^|\.)youtube\.com$/.test(host);
+  const isSocial = /(^|\.)facebook\.com$/.test(host) || /(^|\.)instagram\.com$/.test(host) || /(^|\.)snapchat\.com$/.test(host) || /(^|\.)tiktok\.com$/.test(host) || /(^|\.)linkedin\.com$/.test(host) || /(^|\.)x\.com$/.test(host) || /(^|\.)twitter\.com$/.test(host);
+  const isSupportedHost = isGoogle || isYouTube || isSocial;
+  if (!isSupportedHost) return;
+
+  // ---------- Socials: minimal icons-only bar ----------
+  if (isSocial) {
+    chrome.storage.sync.get({ features: { socialsEnabled: true } }, ({ features }) => {
+      if (!Boolean(features?.socialsEnabled)) return;
+    const STORAGE_KEY = `__lm_social_pos__GLOBAL__`;
+
+    const socialBar = document.createElement('div');
+    socialBar.style.position = 'fixed';
+    socialBar.style.top = '16px';
+    socialBar.style.right = '16px';
+    socialBar.style.zIndex = '2147483647';
+    socialBar.style.display = 'none';
+    socialBar.style.background = '#fff';
+    socialBar.style.color = '#000';
+    socialBar.style.border = '1px solid #e5e7eb';
+    socialBar.style.borderRadius = '999px';
+    socialBar.style.boxShadow = '0 8px 24px rgba(0,0,0,0.15)';
+    socialBar.style.padding = '10px 12px';
+    socialBar.style.fontFamily = 'Poppins, Satoshi, system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+    socialBar.style.backdropFilter = 'saturate(180%) blur(8px)';
+    socialBar.style.userSelect = 'none';
+
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '12px';
+
+    // Drag handle (shows on hover)
+    const handle = document.createElement('div');
+    handle.title = 'Drag to move';
+    handle.style.width = '14px';
+    handle.style.height = '28px';
+    handle.style.marginRight = '8px';
+    handle.style.borderRadius = '6px';
+    handle.style.background = 'linear-gradient(180deg, #e5e7eb, #d1d5db)';
+    handle.style.opacity = '0';
+    handle.style.transition = 'opacity 0.15s ease';
+    handle.style.cursor = 'grab';
+
+    socialBar.addEventListener('mouseenter', () => { handle.style.opacity = '1'; });
+    socialBar.addEventListener('mouseleave', () => { if (!isDragging) handle.style.opacity = '0'; });
+
+    let isDragging = false; let dragOffsetX = 0; let dragOffsetY = 0;
+
+    function onMouseMove(e) {
+      if (!isDragging) return;
+      const newLeft = e.clientX - dragOffsetX;
+      const newTop = e.clientY - dragOffsetY;
+      socialBar.style.left = `${Math.max(8, Math.min(window.innerWidth - socialBar.offsetWidth - 8, newLeft))}px`;
+      socialBar.style.top = `${Math.max(8, Math.min(window.innerHeight - socialBar.offsetHeight - 8, newTop))}px`;
+      socialBar.style.right = '';
+    }
+
+    function onMouseUp() {
+      if (!isDragging) return;
+      isDragging = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      handle.style.cursor = 'grab';
+      handle.style.opacity = '0';
+      // Persist position (GLOBAL)
+      const topPx = parseInt(socialBar.style.top || '16', 10) || 16;
+      const leftPx = parseInt(socialBar.style.left || `${window.innerWidth - socialBar.offsetWidth - 16}`, 10) || 16;
+      chrome.storage.local.set({ [STORAGE_KEY]: { top: topPx, left: leftPx } });
+    }
+
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      // Ensure we have left-based positioning to start dragging
+      if (!socialBar.style.left) {
+        const rect = socialBar.getBoundingClientRect();
+        socialBar.style.left = `${rect.left}px`;
+        socialBar.style.top = `${rect.top}px`;
+        socialBar.style.right = '';
+      }
+      isDragging = true;
+      handle.style.cursor = 'grabbing';
+      dragOffsetX = e.clientX - socialBar.getBoundingClientRect().left;
+      dragOffsetY = e.clientY - socialBar.getBoundingClientRect().top;
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    });
+
+    const socials = [
+      { name: 'Facebook', url: 'https://www.facebook.com/', host: 'facebook.com', icon: 'https://www.facebook.com/favicon.ico' },
+      { name: 'Instagram', url: 'https://www.instagram.com/', host: 'instagram.com', icon: 'https://www.instagram.com/favicon.ico' },
+      { name: 'Snapchat', url: 'https://www.snapchat.com/', host: 'snapchat.com', icon: 'https://www.snapchat.com/favicon.ico' },
+      { name: 'TikTok', url: 'https://www.tiktok.com/', host: 'tiktok.com', icon: 'https://www.tiktok.com/favicon.ico' },
+      { name: 'LinkedIn', url: 'https://www.linkedin.com/', host: 'linkedin.com', icon: 'https://www.linkedin.com/favicon.ico' },
+      { name: 'X', url: 'https://x.com/', host: 'x.com', icon: 'https://abs.twimg.com/favicons/twitter.ico' }
+    ];
+
+    function makeSocialAnchor(s, idx) {
+      const a = document.createElement('a');
+      a.href = s.url;
+      a.title = s.name;
+      a.setAttribute('role', 'button');
+      a.setAttribute('tabindex', '0');
+      a.style.display = 'flex';
+      a.style.alignItems = 'center';
+      a.style.justifyContent = 'center';
+      a.style.padding = '6px';
+      a.style.borderRadius = '10px';
+      a.style.outline = 'none';
+
+      const img = document.createElement('img');
+      img.src = s.icon;
+      img.alt = s.name;
+      img.style.width = '32px';
+      img.style.height = '32px';
+      img.style.borderRadius = '8px';
+      img.style.display = 'block';
+      a.appendChild(img);
+
+      const applyFocus = (focused) => {
+        a.style.background = focused ? '#f3f4f6' : 'transparent';
+      };
+
+      a.addEventListener('focus', () => applyFocus(true));
+      a.addEventListener('blur', () => applyFocus(false));
+      a.addEventListener('mouseenter', () => applyFocus(true));
+      a.addEventListener('mouseleave', () => applyFocus(document.activeElement === a));
+
+      function openOrActivate() {
+        chrome.runtime.sendMessage({ type: 'lm.openOrActivateSocial', url: s.url, host: s.host });
+      }
+
+      a.addEventListener('click', (e) => { e.preventDefault(); openOrActivate(); });
+      a.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); openOrActivate(); }
+        if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          const next = a.nextElementSibling || row.querySelector('a');
+          next && next.focus();
+        }
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          const prev = a.previousElementSibling || row.querySelectorAll('a')[row.querySelectorAll('a').length - 1];
+          prev && prev.focus();
+        }
+      });
+
+      return a;
+    }
+
+    // Append handle first, then icons
+    row.appendChild(handle);
+    socials.forEach((s, i) => row.appendChild(makeSocialAnchor(s, i)));
+
+    socialBar.appendChild(row);
+    document.documentElement.appendChild(socialBar);
+
+    // Restore last position (GLOBAL)
+    chrome.storage.local.get([STORAGE_KEY], (items) => {
+      const pos = items[STORAGE_KEY];
+      if (pos && typeof pos.top === 'number' && typeof pos.left === 'number') {
+        socialBar.style.top = `${pos.top}px`;
+        socialBar.style.left = `${pos.left}px`;
+        socialBar.style.right = '';
+      }
+    });
+
+    function toggle(show) {
+      socialBar.style.display = show ? 'block' : 'none';
+      if (show) {
+        // Focus first icon for keyboard navigation
+        const first = row.querySelector('a');
+        first && first.focus();
+      }
+    }
+
+      chrome.runtime.onMessage.addListener((msg) => {
+      if (!msg || typeof msg !== 'object') return;
+      if (msg.type === 'lm.toggleWidget') {
+        const isHidden = socialBar.style.display === 'none' || socialBar.style.display === '';
+        toggle(isHidden);
+      }
+    });
+
+      // In-page SPA URL watcher: observe pushState/replaceState and popstate
+      (function installSpaWatcher(){
+        let lastHref = location.href;
+        const notify = () => {
+          const href = location.href;
+          if (href === lastHref) return;
+          lastHref = href;
+          try { chrome.runtime.sendMessage({ type: 'lm.spaUrlChanged', url: href }); } catch {}
+        };
+        const origPush = history.pushState;
+        const origReplace = history.replaceState;
+        try {
+          history.pushState = function(){ const r = origPush.apply(this, arguments); setTimeout(notify, 0); return r; };
+          history.replaceState = function(){ const r = origReplace.apply(this, arguments); setTimeout(notify, 0); return r; };
+        } catch {}
+        window.addEventListener('popstate', notify, true);
+        const obs = new MutationObserver(() => { notify(); });
+        try { obs.observe(document, { subtree: true, childList: true }); } catch {}
+        setInterval(notify, 1500);
+      })();
+    });
+    return; // Do not proceed to Google/YouTube UI when on socials
+  }
+
+  // ---------- Google/YouTube: full modal ----------
+  const isDocsFile = () => host === 'docs.google.com' && (/\/document\//.test(location.pathname) || /\/spreadsheets\//.test(location.pathname) || /\/presentation\//.test(location.pathname));
+  const isDriveFile = () => host === 'drive.google.com' && (/\/file\//.test(location.pathname) || /open\?id=/.test(location.search));
+  const isMeet = () => host === 'meet.google.com';
+  const supportsAccessProbe = () => isDocsFile() || isDriveFile() || isMeet();
+
+  function assetUrl(name) { return chrome.runtime.getURL(name); }
 
   function getFaviconUrl() {
     const link = document.querySelector('link[rel~="icon"]') || document.querySelector('link[rel="shortcut icon"]');
@@ -23,6 +237,13 @@
       console.warn("[LinksMaker:Content] Failed to build url", e);
       return currentUrlString;
     }
+  }
+
+  function buildAccountChooserUrl(continueUrl, authIndex) {
+    const base = 'https://accounts.google.com/AccountChooser';
+    const params = new URLSearchParams({ continue: continueUrl });
+    if (authIndex !== undefined && authIndex !== null) params.set('authuser', String(authIndex));
+    return `${base}?${params.toString()}`;
   }
 
   function parseAuthIndexFromUrl(urlStr) {
@@ -71,7 +292,6 @@
   }
 
   function detectActiveAuthIndex(profiles) {
-    // Prefer URL; fallback to email match
     const fromUrl = parseAuthIndexFromUrl(location.href);
     if (fromUrl !== null && !Number.isNaN(fromUrl)) return fromUrl;
     const scanned = scanCurrentGoogleAccount();
@@ -100,28 +320,27 @@
   panel.style.top = "10%";
   panel.style.left = "50%";
   panel.style.transform = "translateX(-50%)";
-  panel.style.width = "420px"; // slightly bigger
+  panel.style.width = "420px";
   panel.style.maxWidth = "92vw";
   panel.style.background = "#fff";
   panel.style.color = "#000";
   panel.style.borderRadius = "12px";
   panel.style.boxShadow = "0 24px 72px rgba(0,0,0,0.28)";
-  panel.style.padding = "24px"; // larger padding
+  panel.style.padding = "24px";
   panel.style.fontFamily = "Poppins, Satoshi, system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
 
-  // Top website card (no carousel)
   const topCard = document.createElement("div");
   topCard.style.display = "flex";
   topCard.style.alignItems = "center";
   topCard.style.gap = "14px";
   topCard.style.background = "#f3f4f6";
-  topCard.style.padding = "16px 18px"; // bigger
-  topCard.style.borderRadius = "12px"; // bigger radius
+  topCard.style.padding = "16px 18px";
+  topCard.style.borderRadius = "12px";
   topCard.style.marginBottom = "16px";
 
   const siteIcon = document.createElement("img");
   siteIcon.src = getFaviconUrl();
-  siteIcon.style.width = "32px"; siteIcon.style.height = "32px"; siteIcon.style.borderRadius = "8px"; // bigger
+  siteIcon.style.width = "32px"; siteIcon.style.height = "32px"; siteIcon.style.borderRadius = "8px";
   const siteTitle = document.createElement("div");
   siteTitle.textContent = document.title || location.hostname;
   siteTitle.style.fontWeight = "700";
@@ -132,20 +351,51 @@
   siteInfo.appendChild(siteTitle); siteInfo.appendChild(siteSub);
   topCard.appendChild(siteIcon); topCard.appendChild(siteInfo);
 
-  // Title
   const title = document.createElement("div");
   title.textContent = "Switch Profiles";
   title.style.fontWeight = "700";
   title.style.margin = "12px 0 6px";
 
-  // Connections list (our profiles)
+  const checkBtn = document.createElement("button");
+  checkBtn.style.border = "1px solid #d1d5db";
+  checkBtn.style.background = "#fff";
+  checkBtn.style.borderRadius = "999px";
+  checkBtn.style.padding = "6px 10px";
+  checkBtn.style.cursor = "pointer";
+  if (isYouTube) {
+    checkBtn.textContent = 'Choose';
+  } else if (supportsAccessProbe()) {
+    checkBtn.textContent = 'Check access';
+  } else {
+    checkBtn.style.display = 'none';
+  }
+
+  const titleRow = document.createElement("div");
+  titleRow.style.display = "flex";
+  titleRow.style.alignItems = "center";
+  titleRow.style.justifyContent = "space-between";
+  titleRow.appendChild(title);
+  titleRow.appendChild(checkBtn);
+
   const list = document.createElement("div");
   list.style.marginTop = "12px";
   list.style.display = "grid";
-  list.style.gap = "12px"; // larger gap
+  list.style.gap = "12px";
 
   let displaySettings = { showAvatars: true, showEmails: true };
   let activeIdxCache = null;
+  let latestResults = {};
+  let loadingByIndex = {};
+
+  function createSpinner() {
+    const s = document.createElement('div');
+    s.style.width = '20px'; s.style.height = '20px'; s.style.border = '2px solid #e5e7eb'; s.style.borderTopColor = '#111'; s.style.borderRadius = '999px'; s.style.animation = 'lmspin 0.8s linear infinite';
+    return s;
+  }
+
+  const style = document.createElement('style');
+  style.textContent = '@keyframes lmspin { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }';
+  document.documentElement.appendChild(style);
 
   function createRow(profile) {
     const row = document.createElement("div");
@@ -159,9 +409,7 @@
     left.style.gap = "12px";
 
     const dot = document.createElement("span");
-    dot.style.width = "12px"; // bigger indicator
-    dot.style.height = "12px";
-    dot.style.borderRadius = "999px";
+    dot.style.width = "12px"; dot.style.height = "12px"; dot.style.borderRadius = "999px";
     const isActive = activeIdxCache !== null && activeIdxCache === profile.authIndex;
     dot.style.background = isActive ? "#22c55e" : "#d1d5db";
 
@@ -171,9 +419,7 @@
       const providerIcon = document.createElement("img");
       providerIcon.src = profile.photoUrl || getFaviconUrl();
       providerIcon.alt = "profile";
-      providerIcon.style.width = "22px"; // bigger avatar
-      providerIcon.style.height = "22px";
-      providerIcon.style.borderRadius = profile.photoUrl ? "999px" : "6px";
+      providerIcon.style.width = "22px"; providerIcon.style.height = "22px"; providerIcon.style.borderRadius = profile.photoUrl ? "999px" : "6px";
       left.appendChild(providerIcon);
     }
 
@@ -186,28 +432,72 @@
     if (displaySettings.showEmails && profile.email) {
       const email = document.createElement("div");
       email.textContent = profile.email;
-      email.style.fontSize = "12px"; // smaller, not bold
-      email.style.color = "#6b7280";
+      email.style.fontSize = "12px"; email.style.color = "#6b7280";
       textCol.appendChild(email);
     }
 
     left.appendChild(textCol);
 
+    const right = document.createElement("div");
+    right.style.display = 'flex'; right.style.gap = '8px'; right.style.alignItems = 'center';
+
+    const showStatus = supportsAccessProbe();
+    let statusBadge = null;
+    let spinner = null;
+
+    if (showStatus) {
+      statusBadge = document.createElement('img');
+      statusBadge.style.width = '20px';
+      statusBadge.style.height = '20px';
+      statusBadge.alt = 'status';
+      spinner = createSpinner();
+    }
+
+    const applyStatus = (status) => {
+      if (!showStatus) return;
+      if (loadingByIndex[profile.authIndex]) {
+        statusBadge.style.display = 'none';
+        right.contains(spinner) || right.appendChild(spinner);
+      } else {
+        spinner.remove();
+        statusBadge.style.display = '';
+        if (status === 'access') {
+          statusBadge.src = assetUrl('Checkmark.png'); statusBadge.title = 'Access';
+        } else if (status === 'no_access') {
+          statusBadge.src = assetUrl('Cross.png'); statusBadge.title = 'No access';
+        } else {
+          statusBadge.src = assetUrl('Warning.png'); statusBadge.title = 'Unknown';
+        }
+      }
+    };
+
+    const status = latestResults[profile.authIndex]?.status;
+    applyStatus(status);
+
+    if (showStatus) right.appendChild(statusBadge);
+
     const action = document.createElement("button");
     action.textContent = "Switch";
-    action.style.border = "1px solid #d1d5db";
-    action.style.background = "#fff";
-    action.style.borderRadius = "999px";
-    action.style.padding = "8px 14px"; // larger button
-    action.style.cursor = "pointer";
-    action.addEventListener("click", () => { const target = buildUrl(location.href, profile.authIndex); location.href = target; });
+    action.style.border = "1px solid #d1d5db"; action.style.background = "#fff"; action.style.borderRadius = "999px"; action.style.padding = "8px 14px"; action.style.cursor = "pointer";
+    action.addEventListener("click", () => {
+      if (isYouTube) {
+        const target = buildUrl(location.href, profile.authIndex);
+        location.href = target;
+      } else {
+        const target = buildUrl(location.href, profile.authIndex);
+        location.href = target;
+      }
+    });
+    right.appendChild(action);
 
-    row.appendChild(left); row.appendChild(action);
+    row.appendChild(left); row.appendChild(right);
+
+    row.__applyStatus = applyStatus;
     return row;
   }
 
   panel.appendChild(topCard);
-  panel.appendChild(title);
+  panel.appendChild(titleRow);
   panel.appendChild(list);
 
   modal.appendChild(backdrop);
@@ -215,12 +505,40 @@
   document.documentElement.appendChild(modal);
 
   let profilesCache = [];
+  const indexToRow = new Map();
 
   function render(profiles) {
     profilesCache = profiles;
+    indexToRow.clear();
     activeIdxCache = detectActiveAuthIndex(profilesCache);
     list.innerHTML = "";
-    profiles.forEach((p) => list.appendChild(createRow(p)));
+    profiles.forEach((p) => {
+      const row = createRow(p);
+      list.appendChild(row);
+      indexToRow.set(p.authIndex, row);
+    });
+  }
+
+  function setLoadingState(isLoading) {
+    checkBtn.disabled = isLoading;
+    profilesCache.forEach((p) => {
+      loadingByIndex[p.authIndex] = isLoading;
+      const row = indexToRow.get(p.authIndex);
+      row?.__applyStatus(latestResults[p.authIndex]?.status);
+    });
+  }
+
+  function triggerAccessCheck() {
+    if (!(isDocsFile() || isDriveFile() || isMeet())) return;
+    console.log('[LinksMaker:Content] check start', location.href);
+    setLoadingState(true);
+    chrome.runtime.sendMessage({ type: 'lm.checkAccess', url: location.href }, (res) => {
+      console.log('[LinksMaker:Content] check response', res);
+      setLoadingState(false);
+      if (!res?.ok) return;
+      latestResults = res.results || {};
+      profilesCache.forEach((p) => indexToRow.get(p.authIndex)?.__applyStatus(latestResults[p.authIndex]?.status));
+    });
   }
 
   function toggle(show) {
@@ -242,7 +560,20 @@
       ];
       render(data);
     });
+
+    if (isDocsFile() || isDriveFile() || isMeet()) {
+      setTimeout(() => triggerAccessCheck(), 800);
+    }
   }
+
+  checkBtn.addEventListener('click', () => {
+    if (isYouTube) {
+      const chooser = buildAccountChooserUrl(location.href, null);
+      location.href = chooser;
+    } else {
+      triggerAccessCheck();
+    }
+  });
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (!msg || typeof msg !== "object") return;

@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Links Maker — Logs</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root { --border:#e5e7eb; --muted:#6b7280; }
+      body { font-family: Poppins, Satoshi, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; color:#111827; }
+      h1 { font-size: 18px; margin: 0 0 12px; }
+      .bar { display:flex; gap:8px; align-items:center; margin-bottom: 12px; }
+      button { padding: 8px 12px; border:1px solid var(--border); border-radius:8px; background:#fff; cursor:pointer; }
+      button.primary { background:#111827; color:#fff; border-color:#111827; }
+      textarea { width: 100%; min-height: 280px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:12px; border:1px solid var(--border); border-radius:8px; padding:8px; }
+      .muted { color: var(--muted); font-size: 12px; margin-top: 8px; }
+    </style>
+  </head>
+  <body>
+    <h1>Links Maker — Logs</h1>
+    <div class="bar">
+      <button id="refresh" class="primary">Refresh</button>
+      <button id="clear">Clear</button>
+      <button id="export">Export JSON</button>
+    </div>
+    <textarea id="out" readonly></textarea>
+    <div class="muted">These logs are stored locally and reset when extension reloads or you clear them.</div>
+    <script src="logs.js"></script>
+  </body>
+  </html>
+
+

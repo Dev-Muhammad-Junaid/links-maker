@@ -34,6 +34,12 @@
       <label class="toggle"><input id="showEmails" type="checkbox" /> Show emails</label>
     </div>
 
+    <h2>Features</h2>
+    <div class="card settings">
+      <label class="toggle"><input id="featureSocials" type="checkbox" /> Enable Socials widget</label>
+      <label class="toggle"><input id="featureLinkBlocking" type="checkbox" /> Enable Link Blocking</label>
+    </div>
+
     <h2>Profiles shown in Switch Profiles</h2>
     <div class="grid-header">
       <div>Profile</div>
@@ -42,12 +48,29 @@
     </div>
     <div id="profiles" class="card"></div>
 
+    <h2>Blocked links (one per line)</h2>
+    <div class="card">
+      <textarea id="blockedPatterns" style="width:100%; min-height:140px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:12px; padding:8px; border:1px solid var(--border); border-radius:8px;" placeholder="Examples:\n*://*.example.com/*\nhttps://bad.example.com/path\n*facebook.com/groups/*\n# Lines starting with # are comments"></textarea>
+      <div class="muted">Supports wildcards * and ?. If no scheme provided, substring match is used.</div>
+    </div>
+
     <div style="margin-top: 12px; display:flex; gap:8px;">
       <button id="add" class="primary">Add profile</button>
       <button id="save">Save</button>
     </div>
 
     <p class="muted">These profiles appear in the in-page Switch Profiles modal. Use display toggles above to show/hide avatars and emails.</p>
+
+    <h2>Logs</h2>
+    <div class="card">
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+        <button id="logsRefresh" class="primary">Refresh</button>
+        <button id="logsClear">Clear</button>
+        <button id="logsExport">Export JSON</button>
+        <a id="logsOpen" href="#" style="margin-left:auto;">Open full logs page</a>
+      </div>
+      <textarea id="logsOut" style="width:100%; min-height:200px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:12px; padding:8px; border:1px solid var(--border); border-radius:8px;" readonly></textarea>
+    </div>
 
     <script src="options.js"></script>
   </body>
