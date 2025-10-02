@@ -12,6 +12,8 @@
 
   // ---------- Socials: minimal icons-only bar ----------
   if (isSocial) {
+    chrome.storage.sync.get({ features: { socialsEnabled: true } }, ({ features }) => {
+      if (!Boolean(features?.socialsEnabled)) return;
     const STORAGE_KEY = `__lm_social_pos__GLOBAL__`;
 
     const socialBar = document.createElement('div');
@@ -179,7 +181,7 @@
       }
     }
 
-    chrome.runtime.onMessage.addListener((msg) => {
+      chrome.runtime.onMessage.addListener((msg) => {
       if (!msg || typeof msg !== 'object') return;
       if (msg.type === 'lm.toggleWidget') {
         const isHidden = socialBar.style.display === 'none' || socialBar.style.display === '';
@@ -187,6 +189,27 @@
       }
     });
 
+      // In-page SPA URL watcher: observe pushState/replaceState and popstate
+      (function installSpaWatcher(){
+        let lastHref = location.href;
+        const notify = () => {
+          const href = location.href;
+          if (href === lastHref) return;
+          lastHref = href;
+          try { chrome.runtime.sendMessage({ type: 'lm.spaUrlChanged', url: href }); } catch {}
+        };
+        const origPush = history.pushState;
+        const origReplace = history.replaceState;
+        try {
+          history.pushState = function(){ const r = origPush.apply(this, arguments); setTimeout(notify, 0); return r; };
+          history.replaceState = function(){ const r = origReplace.apply(this, arguments); setTimeout(notify, 0); return r; };
+        } catch {}
+        window.addEventListener('popstate', notify, true);
+        const obs = new MutationObserver(() => { notify(); });
+        try { obs.observe(document, { subtree: true, childList: true }); } catch {}
+        setInterval(notify, 1500);
+      })();
+    });
     return; // Do not proceed to Google/YouTube UI when on socials
   }
 

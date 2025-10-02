@@ -5,6 +5,14 @@ const addBtn = document.getElementById("add");
 const saveBtn = document.getElementById("save");
 const showAvatarsEl = document.getElementById("showAvatars");
 const showEmailsEl = document.getElementById("showEmails");
+const featureSocialsEl = document.getElementById("featureSocials");
+const featureLinkBlockingEl = document.getElementById("featureLinkBlocking");
+const blockedPatternsEl = document.getElementById("blockedPatterns");
+const logsOutEl = document.getElementById("logsOut");
+const logsRefreshBtn = document.getElementById("logsRefresh");
+const logsClearBtn = document.getElementById("logsClear");
+const logsExportBtn = document.getElementById("logsExport");
+const logsOpenLink = document.getElementById("logsOpen");
 
 function createRow(profile = { id: "", label: "", authIndex: 0, name: "", email: "", photoUrl: "" }) {
   const row = document.createElement("div");
@@ -94,8 +102,8 @@ function render(profiles) {
 
 function load() {
   chrome.storage.sync.get(
-    { profiles: null, display: { showAvatars: true, showEmails: true } },
-    ({ profiles, display }) => {
+    { profiles: null, display: { showAvatars: true, showEmails: true }, features: { socialsEnabled: true, linkBlockingEnabled: false }, blocked: { patterns: [] } },
+    ({ profiles, display, features, blocked }) => {
       const data = Array.isArray(profiles) && profiles.length > 0 ? profiles : [
         { id: "work", label: "Work", authIndex: 0 },
         { id: "personal", label: "Personal", authIndex: 1 },
@@ -103,8 +111,13 @@ function load() {
       render(data);
       showAvatarsEl.checked = Boolean(display?.showAvatars);
       showEmailsEl.checked = Boolean(display?.showEmails);
+      featureSocialsEl.checked = Boolean(features?.socialsEnabled ?? true);
+      featureLinkBlockingEl.checked = Boolean(features?.linkBlockingEnabled ?? false);
+      const patterns = Array.isArray(blocked?.patterns) ? blocked.patterns : [];
+      blockedPatternsEl.value = patterns.join("\n");
     }
   );
+  loadLogs();
 }
 
 addBtn.addEventListener("click", () => {
@@ -120,14 +133,51 @@ saveBtn.addEventListener("click", () => {
       return { ...prev, ...p };
     });
     const display = { showAvatars: showAvatarsEl.checked, showEmails: showEmailsEl.checked };
-    chrome.storage.sync.set({ profiles: merged, display }, () => {
+    const features = { socialsEnabled: featureSocialsEl.checked, linkBlockingEnabled: featureLinkBlockingEl.checked };
+    const patterns = (blockedPatternsEl.value || "")
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    chrome.storage.sync.set({ profiles: merged, display, features, blocked: { patterns } }, () => {
       if (chrome.runtime.lastError) {
         console.warn("[LinksMaker:Options] Save error", chrome.runtime.lastError);
         return;
       }
-      console.info("[LinksMaker:Options] Saved", { profiles: merged, display });
+      console.info("[LinksMaker:Options] Saved", { profiles: merged, display, features, blocked: { patterns } });
     });
   });
+});
+
+function renderLogs(list){
+  try { logsOutEl.value = (list || []).map((e) => JSON.stringify(e)).join("\n"); } catch { logsOutEl.value = ""; }
+}
+
+function loadLogs(){
+  try {
+    chrome.storage.local.get(["__lm_logs"], (items) => {
+      const logs = Array.isArray(items.__lm_logs) ? items.__lm_logs : [];
+      renderLogs(logs);
+    });
+  } catch { renderLogs([]); }
+}
+
+logsRefreshBtn.addEventListener("click", loadLogs);
+logsClearBtn.addEventListener("click", () => {
+  try { chrome.storage.local.set({ __lm_logs: [] }, loadLogs); } catch {}
+});
+logsExportBtn.addEventListener("click", () => {
+  try {
+    chrome.storage.local.get(["__lm_logs"], (items) => {
+      const logs = Array.isArray(items.__lm_logs) ? items.__lm_logs : [];
+      const blob = new Blob([JSON.stringify(logs, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      chrome.downloads?.download?.({ url, filename: "links-maker-logs.json", saveAs: true });
+    });
+  } catch {}
+});
+logsOpenLink.addEventListener("click", (e) => {
+  e.preventDefault();
+  try { chrome.tabs.create({ url: chrome.runtime.getURL("logs.html") }); } catch {}
 });
 
 load();
