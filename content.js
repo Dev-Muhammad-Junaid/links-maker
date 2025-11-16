@@ -373,6 +373,14 @@
   title.textContent = "Switch Profiles";
   title.style.fontWeight = "700";
   title.style.margin = "12px 0 6px";
+  
+  // Add hint about keyboard shortcuts
+  const shortcutHint = document.createElement("div");
+  shortcutHint.textContent = "Press 1-9 to switch";
+  shortcutHint.style.fontSize = "11px";
+  shortcutHint.style.color = "#6b7280";
+  shortcutHint.style.marginTop = "2px";
+  shortcutHint.style.fontWeight = "400";
 
   const checkBtn = document.createElement("button");
   checkBtn.style.border = "1px solid #d1d5db";
@@ -388,11 +396,17 @@
     checkBtn.style.display = 'none';
   }
 
+  const titleContainer = document.createElement("div");
+  titleContainer.style.display = "flex";
+  titleContainer.style.flexDirection = "column";
+  titleContainer.appendChild(title);
+  titleContainer.appendChild(shortcutHint);
+  
   const titleRow = document.createElement("div");
   titleRow.style.display = "flex";
   titleRow.style.alignItems = "center";
   titleRow.style.justifyContent = "space-between";
-  titleRow.appendChild(title);
+  titleRow.appendChild(titleContainer);
   titleRow.appendChild(checkBtn);
 
   const list = document.createElement("div");
@@ -421,11 +435,13 @@
   style.textContent = '@keyframes lmspin { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }';
   document.documentElement.appendChild(style);
 
-  function createRow(profile) {
+  function createRow(profile, index) {
     const row = document.createElement("div");
     row.style.display = "flex";
     row.style.alignItems = "center";
     row.style.justifyContent = "space-between";
+    row.setAttribute('data-profile-index', index);
+    row.setAttribute('data-auth-index', profile.authIndex);
 
     const left = document.createElement("div");
     left.style.display = "flex";
@@ -500,6 +516,28 @@
 
     if (showStatus) right.appendChild(statusBadge);
 
+    // Shortcut key indicator (1-9)
+    const shortcutKey = index < 9 ? String(index + 1) : null;
+    if (shortcutKey) {
+      const shortcutBadge = document.createElement("div");
+      shortcutBadge.textContent = shortcutKey;
+      shortcutBadge.style.minWidth = "24px";
+      shortcutBadge.style.height = "24px";
+      shortcutBadge.style.borderRadius = "6px";
+      shortcutBadge.style.background = "#f3f4f6";
+      shortcutBadge.style.border = "1px solid #e5e7eb";
+      shortcutBadge.style.display = "flex";
+      shortcutBadge.style.alignItems = "center";
+      shortcutBadge.style.justifyContent = "center";
+      shortcutBadge.style.fontSize = "11px";
+      shortcutBadge.style.fontWeight = "600";
+      shortcutBadge.style.color = "#6b7280";
+      shortcutBadge.style.fontFamily = "Poppins, Satoshi, system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+      shortcutBadge.style.marginRight = "4px";
+      shortcutBadge.title = `Press ${shortcutKey} to switch`;
+      right.appendChild(shortcutBadge);
+    }
+
     const action = document.createElement("button");
     action.textContent = "Switch";
     action.style.border = "1px solid #e5e7eb";
@@ -527,10 +565,12 @@
       action.style.transform = "";
     });
     action.addEventListener("click", () => {
-      const target = buildUrl(location.href, profile.authIndex);
-      location.href = target;
+      switchToProfile(profile.authIndex);
     });
     right.appendChild(action);
+    
+    // Store switch function on row for keyboard access
+    row.__switchToProfile = () => switchToProfile(profile.authIndex);
 
     row.appendChild(left); row.appendChild(right);
 
@@ -549,13 +589,18 @@
   let profilesCache = [];
   const indexToRow = new Map();
 
+  function switchToProfile(authIndex) {
+    const target = buildUrl(location.href, authIndex);
+    location.href = target;
+  }
+
   function render(profiles) {
     profilesCache = profiles;
     indexToRow.clear();
     activeIdxCache = detectActiveAuthIndex(profilesCache);
     list.innerHTML = "";
-    profiles.forEach((p) => {
-      const row = createRow(p);
+    profiles.forEach((p, index) => {
+      const row = createRow(p, index);
       list.appendChild(row);
       indexToRow.set(p.authIndex, row);
     });
@@ -639,14 +684,69 @@
     }
   }
 
+  // Keyboard shortcut handler
+  function handleKeyboardShortcut(e) {
+    // Only handle when modal is visible
+    if (modal.style.display !== "block") return;
+    
+    // Handle number keys 1-9
+    const key = e.key;
+    if (/^[1-9]$/.test(key)) {
+      const profileIndex = parseInt(key) - 1;
+      const rows = Array.from(list.querySelectorAll('[data-profile-index]'));
+      const targetRow = rows[profileIndex];
+      
+      if (targetRow && targetRow.__switchToProfile) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        // Visual feedback: briefly highlight the row
+        const originalBg = targetRow.style.background;
+        targetRow.style.background = "#e5e7eb";
+        targetRow.style.transition = "background 0.2s ease";
+        setTimeout(() => {
+          targetRow.style.background = originalBg;
+        }, 200);
+        
+        // Switch to profile
+        targetRow.__switchToProfile();
+      }
+    }
+    
+    // Handle Escape to close modal
+    if (key === "Escape") {
+      e.preventDefault();
+      toggle(false);
+    }
+  }
+
+  // Add keyboard event listener to document when modal is shown
+  let keyboardListenerAdded = false;
+  function addKeyboardListener() {
+    if (!keyboardListenerAdded) {
+      document.addEventListener("keydown", handleKeyboardShortcut, true);
+      keyboardListenerAdded = true;
+    }
+  }
+  
+  function removeKeyboardListener() {
+    if (keyboardListenerAdded) {
+      document.removeEventListener("keydown", handleKeyboardShortcut, true);
+      keyboardListenerAdded = false;
+    }
+  }
+
   function toggle(show) {
     modal.style.display = show ? "block" : "none";
     if (show) {
+      addKeyboardListener();
       upsertCurrentAccountIntoProfiles();
       chrome.storage.sync.get({ display: { showAvatars: true, showEmails: true }, profiles: [] }, ({ display, profiles }) => {
         displaySettings = { showAvatars: Boolean(display?.showAvatars), showEmails: Boolean(display?.showEmails) };
         render(Array.isArray(profiles) ? profiles : []);
       });
+    } else {
+      removeKeyboardListener();
     }
   }
 
