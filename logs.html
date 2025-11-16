@@ -4,26 +4,96 @@
     <meta charset="utf-8" />
     <title>Links Maker — Logs</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="ui/theme.css" />
     <style>
-      :root { --border:#e5e7eb; --muted:#6b7280; }
-      body { font-family: Poppins, Satoshi, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; color:#111827; }
-      h1 { font-size: 18px; margin: 0 0 12px; }
-      .bar { display:flex; gap:8px; align-items:center; margin-bottom: 12px; }
-      button { padding: 8px 12px; border:1px solid var(--border); border-radius:8px; background:#fff; cursor:pointer; }
-      button.primary { background:#111827; color:#fff; border-color:#111827; }
-      textarea { width: 100%; min-height: 280px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:12px; border:1px solid var(--border); border-radius:8px; padding:8px; }
-      .muted { color: var(--muted); font-size: 12px; margin-top: 8px; }
+      * { box-sizing: border-box; }
+      body { 
+        font-family: var(--lm-font-family); 
+        margin: 0;
+        padding: var(--lm-spacing-xl); 
+        color: var(--lm-color-primary);
+        background: var(--lm-color-bg-muted);
+        min-height: 100vh;
+      }
+      .container {
+        max-width: 900px;
+        margin: 0 auto;
+      }
+      .card {
+        border: 1px solid var(--lm-color-border);
+        border-radius: var(--lm-radius-lg);
+        padding: var(--lm-spacing-xl);
+        background: var(--lm-color-bg);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+      }
+      h1 { 
+        font-size: var(--lm-font-size-xl); 
+        margin: 0 0 var(--lm-spacing-lg);
+        font-weight: 700;
+      }
+      .bar { 
+        display: flex; 
+        gap: var(--lm-spacing-md); 
+        align-items: center; 
+        margin-bottom: var(--lm-spacing-lg); 
+      }
+      button { 
+        padding: var(--lm-spacing-sm) var(--lm-spacing-lg); 
+        border: 1px solid var(--lm-color-border); 
+        border-radius: var(--lm-radius-md); 
+        background: var(--lm-color-bg); 
+        cursor: pointer; 
+        font-family: var(--lm-font-family);
+        font-size: var(--lm-font-size-sm);
+        font-weight: 500;
+        transition: all 0.15s ease;
+      }
+      button.primary { 
+        background: var(--lm-color-primary); 
+        color: var(--lm-color-bg); 
+        border-color: var(--lm-color-primary); 
+      }
+      button:hover {
+        background: var(--lm-color-bg-muted);
+        border-color: var(--lm-color-primary);
+      }
+      button.primary:hover {
+        background: #000;
+        border-color: #000;
+      }
+      button:active {
+        transform: scale(0.98);
+      }
+      textarea { 
+        width: 100%; 
+        min-height: 280px; 
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; 
+        font-size: var(--lm-font-size-xs); 
+        border: 1px solid var(--lm-color-border); 
+        border-radius: var(--lm-radius-md); 
+        padding: var(--lm-spacing-md);
+        background: var(--lm-color-bg);
+      }
+      .muted { 
+        color: var(--lm-color-muted); 
+        font-size: var(--lm-font-size-xs); 
+        margin-top: var(--lm-spacing-md); 
+      }
     </style>
   </head>
   <body>
-    <h1>Links Maker — Logs</h1>
-    <div class="bar">
-      <button id="refresh" class="primary">Refresh</button>
-      <button id="clear">Clear</button>
-      <button id="export">Export JSON</button>
+    <div class="container">
+      <h1>Links Maker — Logs</h1>
+      <div class="card">
+        <div class="bar">
+          <button id="refresh" class="primary">Refresh</button>
+          <button id="clear">Clear</button>
+          <button id="export">Export JSON</button>
+        </div>
+        <textarea id="out" readonly></textarea>
+        <div class="muted">These logs are stored locally and reset when extension reloads or you clear them.</div>
+      </div>
     </div>
-    <textarea id="out" readonly></textarea>
-    <div class="muted">These logs are stored locally and reset when extension reloads or you clear them.</div>
     <script src="logs.js"></script>
   </body>
   </html>

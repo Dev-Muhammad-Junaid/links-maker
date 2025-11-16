@@ -1,0 +1,43 @@
+/* Links Maker — Shared Theme CSS Variables */
+:root {
+  /* Colors */
+  --lm-color-border: #e5e7eb;
+  --lm-color-muted: #6b7280;
+  --lm-color-primary: #111827;
+  --lm-color-bg: #fff;
+  --lm-color-bg-muted: #f3f4f6;
+  --lm-color-success: #22c55e;
+  --lm-color-error: #ef4444;
+  --lm-color-warning: #f59e0b;
+  
+  /* Spacing */
+  --lm-spacing-xs: 4px;
+  --lm-spacing-sm: 8px;
+  --lm-spacing-md: 12px;
+  --lm-spacing-lg: 16px;
+  --lm-spacing-xl: 24px;
+  
+  /* Typography */
+  --lm-font-family: Poppins, Satoshi, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  --lm-font-size-xs: 11px;
+  --lm-font-size-sm: 12px;
+  --lm-font-size-base: 14px;
+  --lm-font-size-lg: 18px;
+  --lm-font-size-xl: 20px;
+  --lm-font-size-2xl: 22px;
+  
+  /* Shadows */
+  --lm-shadow-sm: 0 8px 24px rgba(0,0,0,0.15);
+  --lm-shadow-lg: 0 24px 72px rgba(0,0,0,0.28);
+  
+  /* Border radius */
+  --lm-radius-sm: 6px;
+  --lm-radius-md: 8px;
+  --lm-radius-lg: 12px;
+  --lm-radius-full: 999px;
+  
+  /* Z-index */
+  --lm-z-modal: 999999;
+  --lm-z-social-bar: 2147483647;
+}
+
