@@ -109,3 +109,38 @@ export function isMeetUrl(urlString) {
     return false;
   } catch { return false; }
 }
+
+/**
+ * Extract a unique identifier for caching purposes
+ * Returns file ID for Docs/Drive, meeting code for Meet, or null
+ */
+export function extractResourceId(urlString) {
+  try {
+    // Try Google File ID first
+    const fileInfo = parseGoogleFileId(urlString);
+    if (fileInfo?.id) {
+      return `file:${fileInfo.id}`;
+    }
+    
+    // Try Meet code
+    const u = new URL(urlString);
+    if (u.hostname === 'meet.google.com') {
+      const p = u.pathname || '/';
+      const meetCodeMatch = p.match(/^\/([a-z]{3}-[a-z]{4}-[a-z]{3})(\W|$)/i);
+      if (meetCodeMatch) {
+        return `meet:${meetCodeMatch[1].toLowerCase()}`;
+      }
+      // For lookup URLs, use the full path as ID
+      if (/^\/lookup\//.test(p)) {
+        return `meet:lookup:${p}`;
+      }
+      if (/^\/v2\//.test(p)) {
+        return `meet:v2:${p}`;
+      }
+    }
+    
+    return null;
+  } catch {
+    return null;
+  }
+}

@@ -14,7 +14,7 @@
   if (isSocial) {
     chrome.storage.sync.get({ features: { socialsEnabled: true } }, ({ features }) => {
       if (!Boolean(features?.socialsEnabled)) return;
-    const STORAGE_KEY = `__lm_social_pos__GLOBAL__`;
+    const STORAGE_KEY_SOCIAL_POS = '__lm_social_pos__GLOBAL__';
 
     const socialBar = document.createElement('div');
     socialBar.style.position = 'fixed';
@@ -73,7 +73,7 @@
       // Persist position (GLOBAL)
       const topPx = parseInt(socialBar.style.top || '16', 10) || 16;
       const leftPx = parseInt(socialBar.style.left || `${window.innerWidth - socialBar.offsetWidth - 16}`, 10) || 16;
-      chrome.storage.local.set({ [STORAGE_KEY]: { top: topPx, left: leftPx } });
+      chrome.storage.local.set({ [STORAGE_KEY_SOCIAL_POS]: { top: topPx, left: leftPx } });
     }
 
     handle.addEventListener('mousedown', (e) => {
@@ -163,8 +163,8 @@
     document.documentElement.appendChild(socialBar);
 
     // Restore last position (GLOBAL)
-    chrome.storage.local.get([STORAGE_KEY], (items) => {
-      const pos = items[STORAGE_KEY];
+    chrome.storage.local.get([STORAGE_KEY_SOCIAL_POS], (items) => {
+      const pos = items[STORAGE_KEY_SOCIAL_POS];
       if (pos && typeof pos.top === 'number' && typeof pos.left === 'number') {
         socialBar.style.top = `${pos.top}px`;
         socialBar.style.left = `${pos.left}px`;
@@ -184,10 +184,18 @@
       chrome.runtime.onMessage.addListener((msg) => {
       if (!msg || typeof msg !== 'object') return;
       if (msg.type === 'lm.toggleWidget') {
-        const isHidden = socialBar.style.display === 'none' || socialBar.style.display === '';
-        toggle(isHidden);
+        try {
+          console.log('[LinksMaker:Content] Toggle widget message received (social)');
+          const isHidden = socialBar.style.display === 'none' || socialBar.style.display === '';
+          console.log('[LinksMaker:Content] Social bar state:', { isHidden, display: socialBar.style.display });
+          toggle(isHidden);
+        } catch (e) {
+          console.error('[LinksMaker:Content] Social toggle error', e);
+        }
       }
     });
+    
+    console.log('[LinksMaker:Content] Message listener registered for social bar');
 
       // In-page SPA URL watcher: observe pushState/replaceState and popstate
       (function installSpaWatcher(){
@@ -342,13 +350,23 @@
   siteIcon.src = getFaviconUrl();
   siteIcon.style.width = "32px"; siteIcon.style.height = "32px"; siteIcon.style.borderRadius = "8px";
   const siteTitle = document.createElement("div");
-  siteTitle.textContent = document.title || location.hostname;
+  // Extract just the website name, removing tags/subline (everything after | or -)
+  let siteName = document.title || location.hostname;
+  if (siteName.includes('|')) {
+    siteName = siteName.split('|')[0].trim();
+  } else if (siteName.includes('—')) {
+    siteName = siteName.split('—')[0].trim();
+  } else if (siteName.includes('-')) {
+    // Only split on dash if it's not part of the domain
+    const parts = siteName.split(' - ');
+    if (parts.length > 1 && !parts[0].includes('.')) {
+      siteName = parts[0].trim();
+    }
+  }
+  siteTitle.textContent = siteName;
   siteTitle.style.fontWeight = "700";
-  const siteSub = document.createElement("div");
-  siteSub.textContent = location.hostname;
-  siteSub.style.fontSize = "12px"; siteSub.style.color = "#6b7280";
   const siteInfo = document.createElement("div");
-  siteInfo.appendChild(siteTitle); siteInfo.appendChild(siteSub);
+  siteInfo.appendChild(siteTitle);
   topCard.appendChild(siteIcon); topCard.appendChild(siteInfo);
 
   const title = document.createElement("div");
@@ -386,6 +404,12 @@
   let activeIdxCache = null;
   let latestResults = {};
   let loadingByIndex = {};
+  
+  // Debouncing for automatic access checks
+  let accessCheckTimeout = null;
+  let lastCheckedUrl = null;
+  let lastCheckTimestamp = 0;
+  const ACCESS_CHECK_DEBOUNCE = 2000; // 2 seconds
 
   function createSpinner() {
     const s = document.createElement('div');
@@ -478,15 +502,33 @@
 
     const action = document.createElement("button");
     action.textContent = "Switch";
-    action.style.border = "1px solid #d1d5db"; action.style.background = "#fff"; action.style.borderRadius = "999px"; action.style.padding = "8px 14px"; action.style.cursor = "pointer";
+    action.style.border = "1px solid #e5e7eb";
+    action.style.background = "#fff";
+    action.style.borderRadius = "8px";
+    action.style.padding = "8px 16px";
+    action.style.cursor = "pointer";
+    action.style.fontFamily = "Poppins, Satoshi, system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+    action.style.fontSize = "12px";
+    action.style.fontWeight = "500";
+    action.style.color = "#111827";
+    action.style.transition = "all 0.15s ease";
+    action.addEventListener("mouseenter", () => {
+      action.style.background = "#f3f4f6";
+      action.style.borderColor = "#111827";
+    });
+    action.addEventListener("mouseleave", () => {
+      action.style.background = "#fff";
+      action.style.borderColor = "#e5e7eb";
+    });
+    action.addEventListener("mousedown", () => {
+      action.style.transform = "scale(0.98)";
+    });
+    action.addEventListener("mouseup", () => {
+      action.style.transform = "";
+    });
     action.addEventListener("click", () => {
-      if (isYouTube) {
-        const target = buildUrl(location.href, profile.authIndex);
-        location.href = target;
-      } else {
-        const target = buildUrl(location.href, profile.authIndex);
-        location.href = target;
-      }
+      const target = buildUrl(location.href, profile.authIndex);
+      location.href = target;
     });
     right.appendChild(action);
 
@@ -528,17 +570,73 @@
     });
   }
 
-  function triggerAccessCheck() {
+  function triggerAccessCheck(immediate = false, forceRefresh = false) {
     if (!(isDocsFile() || isDriveFile() || isMeet())) return;
-    console.log('[LinksMaker:Content] check start', location.href);
-    setLoadingState(true);
-    chrome.runtime.sendMessage({ type: 'lm.checkAccess', url: location.href }, (res) => {
-      console.log('[LinksMaker:Content] check response', res);
-      setLoadingState(false);
-      if (!res?.ok) return;
-      latestResults = res.results || {};
-      profilesCache.forEach((p) => indexToRow.get(p.authIndex)?.__applyStatus(latestResults[p.authIndex]?.status));
-    });
+    
+    const currentUrl = location.href;
+    const now = Date.now();
+    
+    // Debounce: if same URL checked recently and not immediate, skip
+    if (!immediate && currentUrl === lastCheckedUrl) {
+      const timeSinceLastCheck = now - lastCheckTimestamp;
+      if (timeSinceLastCheck < ACCESS_CHECK_DEBOUNCE) {
+        // Debounced - skip check
+        return;
+      }
+    }
+    
+    // Clear any pending debounced check
+    if (accessCheckTimeout) {
+      clearTimeout(accessCheckTimeout);
+      accessCheckTimeout = null;
+    }
+    
+    // Execute check (with optional delay for debouncing)
+    const executeCheck = () => {
+      lastCheckedUrl = currentUrl;
+      lastCheckTimestamp = Date.now();
+      
+      // Log via background (non-blocking)
+      try {
+        chrome.runtime.sendMessage({ 
+          type: 'lm.contentLog', 
+          level: 'info', 
+          message: 'Access check start', 
+          data: { url: currentUrl, forceRefresh } 
+        }).catch(() => {});
+      } catch {}
+      
+      setLoadingState(true);
+      chrome.runtime.sendMessage({ 
+        type: 'lm.checkAccess', 
+        url: currentUrl,
+        forceRefresh 
+      }, (res) => {
+        try {
+          chrome.runtime.sendMessage({ 
+            type: 'lm.contentLog', 
+            level: 'info', 
+            message: 'Access check response', 
+            data: { results: res, cached: res?.cached } 
+          }).catch(() => {});
+        } catch {}
+        setLoadingState(false);
+        if (!res?.ok) return;
+        latestResults = res.results || {};
+        profilesCache.forEach((p) => {
+          const row = indexToRow.get(p.authIndex);
+          if (row) {
+            row.__applyStatus(latestResults[p.authIndex]?.status);
+          }
+        });
+      });
+    };
+    
+    if (immediate) {
+      executeCheck();
+    } else {
+      accessCheckTimeout = setTimeout(executeCheck, 300); // Small delay for debouncing
+    }
   }
 
   function toggle(show) {
@@ -562,7 +660,8 @@
     });
 
     if (isDocsFile() || isDriveFile() || isMeet()) {
-      setTimeout(() => triggerAccessCheck(), 800);
+      const ACCESS_CHECK_DELAY = 800;
+      setTimeout(() => triggerAccessCheck(), ACCESS_CHECK_DELAY);
     }
   }
 
@@ -571,17 +670,30 @@
       const chooser = buildAccountChooserUrl(location.href, null);
       location.href = chooser;
     } else {
-      triggerAccessCheck();
+      // Force refresh on manual button click
+      triggerAccessCheck(true, true);
     }
   });
 
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (!msg || typeof msg !== "object") return;
+  // Register message listener early, before init()
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (!msg || typeof msg !== "object") return false;
     if (msg.type === "lm.toggleWidget") {
-      const isHidden = modal.style.display === "none" || modal.style.display === "";
-      toggle(isHidden);
+      try {
+        console.log('[LinksMaker:Content] Toggle widget message received');
+        const isHidden = modal.style.display === "none" || modal.style.display === "";
+        console.log('[LinksMaker:Content] Modal state:', { isHidden, display: modal.style.display });
+        toggle(isHidden);
+        return true;
+      } catch (e) {
+        console.error('[LinksMaker:Content] Toggle error', e);
+        return false;
+      }
     }
+    return false;
   });
+  
+  console.log('[LinksMaker:Content] Message listener registered for Google/YouTube modal');
 
   init();
 })();
