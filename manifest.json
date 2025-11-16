@@ -46,7 +46,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["Checkmark.png", "Cross.png", "Warning.png"],
+      "resources": ["Checkmark.png", "Cross.png", "Warning.png", "options.html"],
       "matches": ["*://*/*"]
     }
   ]
