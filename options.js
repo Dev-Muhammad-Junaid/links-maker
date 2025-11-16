@@ -1,5 +1,8 @@
 /* Links Maker — Options logic */
 
+const backdrop = document.getElementById("backdrop");
+const panel = document.getElementById("panel");
+const closeBtn = document.getElementById("closeBtn");
 const profilesContainer = document.getElementById("profiles");
 const addBtn = document.getElementById("add");
 const saveBtn = document.getElementById("save");
@@ -8,11 +11,65 @@ const showEmailsEl = document.getElementById("showEmails");
 const featureSocialsEl = document.getElementById("featureSocials");
 const featureLinkBlockingEl = document.getElementById("featureLinkBlocking");
 const blockedPatternsEl = document.getElementById("blockedPatterns");
+const blockedPatternsStatusEl = document.getElementById("blockedPatternsStatus");
 const logsOutEl = document.getElementById("logsOut");
 const logsRefreshBtn = document.getElementById("logsRefresh");
 const logsClearBtn = document.getElementById("logsClear");
 const logsExportBtn = document.getElementById("logsExport");
 const logsOpenLink = document.getElementById("logsOpen");
+const clearCacheBtn = document.getElementById("clearCache");
+const cacheStatusEl = document.getElementById("cacheStatus");
+
+// Check if we're in an iframe
+const isInIframe = window.parent !== window;
+
+// Add class to body if in iframe for CSS targeting
+if (isInIframe) {
+  document.body.classList.add('in-iframe');
+  document.documentElement.classList.add('in-iframe');
+  // Ensure html and body take full height
+  document.documentElement.style.height = '100%';
+  document.body.style.height = '100%';
+  document.body.style.display = 'flex';
+  document.body.style.flexDirection = 'column';
+}
+
+// Show panel with animation
+function showPanel() {
+  if (!isInIframe) {
+    backdrop.classList.add("show");
+  }
+  panel.classList.add("show");
+}
+
+// Hide panel with animation
+function hidePanel() {
+  if (!isInIframe) {
+    backdrop.classList.remove("show");
+  }
+  panel.classList.remove("show");
+}
+
+// Close handlers
+closeBtn.addEventListener("click", () => {
+  hidePanel();
+  // If in iframe, send message to parent to close
+  if (isInIframe) {
+    window.parent.postMessage({ type: 'lm-close-options' }, '*');
+  } else {
+    setTimeout(() => window.close(), 300);
+  }
+});
+
+if (!isInIframe) {
+  backdrop.addEventListener("click", () => {
+    hidePanel();
+    setTimeout(() => window.close(), 300);
+  });
+}
+
+// Show panel on load
+setTimeout(showPanel, 10);
 
 function createRow(profile = { id: "", label: "", authIndex: 0, name: "", email: "", photoUrl: "" }) {
   const row = document.createElement("div");
@@ -124,6 +181,48 @@ addBtn.addEventListener("click", () => {
   profilesContainer.appendChild(createRow());
 });
 
+// Auto-save blocked patterns with debounce
+let blockedPatternsTimeout = null;
+function saveBlockedPatterns() {
+  if (blockedPatternsTimeout) {
+    clearTimeout(blockedPatternsTimeout);
+  }
+  // Show saving indicator
+  if (blockedPatternsStatusEl) {
+    blockedPatternsStatusEl.textContent = 'Saving...';
+    blockedPatternsStatusEl.style.opacity = '0.6';
+  }
+  blockedPatternsTimeout = setTimeout(() => {
+    const patterns = (blockedPatternsEl.value || "")
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    chrome.storage.sync.get({ blocked: { patterns: [] } }, ({ blocked }) => {
+      chrome.storage.sync.set({ blocked: { patterns } }, () => {
+        if (chrome.runtime.lastError) {
+          console.warn("[LinksMaker:Options] Save blocked patterns error", chrome.runtime.lastError);
+          if (blockedPatternsStatusEl) {
+            blockedPatternsStatusEl.textContent = 'Error';
+            blockedPatternsStatusEl.style.opacity = '1';
+            setTimeout(() => { blockedPatternsStatusEl.style.opacity = '0'; }, 2000);
+          }
+          return;
+        }
+        console.info("[LinksMaker:Options] Blocked patterns auto-saved", { patterns });
+        // Show saved indicator
+        if (blockedPatternsStatusEl) {
+          blockedPatternsStatusEl.textContent = '✓ Saved';
+          blockedPatternsStatusEl.style.opacity = '1';
+          setTimeout(() => { blockedPatternsStatusEl.style.opacity = '0'; }, 2000);
+        }
+      });
+    });
+  }, 500); // Debounce 500ms
+}
+
+blockedPatternsEl.addEventListener("input", saveBlockedPatterns);
+blockedPatternsEl.addEventListener("change", saveBlockedPatterns);
+
 saveBtn.addEventListener("click", () => {
   // Merge with existing to preserve photoUrl
   chrome.storage.sync.get({ profiles: [] }, ({ profiles: existing }) => {
@@ -134,6 +233,7 @@ saveBtn.addEventListener("click", () => {
     });
     const display = { showAvatars: showAvatarsEl.checked, showEmails: showEmailsEl.checked };
     const features = { socialsEnabled: featureSocialsEl.checked, linkBlockingEnabled: featureLinkBlockingEl.checked };
+    // Note: blocked patterns are auto-saved, but we include them here for consistency
     const patterns = (blockedPatternsEl.value || "")
       .split(/\r?\n/)
       .map((s) => s.trim())
@@ -178,6 +278,39 @@ logsExportBtn.addEventListener("click", () => {
 logsOpenLink.addEventListener("click", (e) => {
   e.preventDefault();
   try { chrome.tabs.create({ url: chrome.runtime.getURL("logs.html") }); } catch {}
+});
+
+clearCacheBtn.addEventListener("click", () => {
+  if (clearCacheBtn.disabled) return;
+  
+  clearCacheBtn.disabled = true;
+  cacheStatusEl.textContent = "Clearing...";
+  cacheStatusEl.style.opacity = "1";
+  
+  chrome.runtime.sendMessage({ type: 'lm.clearAccessCache' }, (response) => {
+    clearCacheBtn.disabled = false;
+    if (response?.ok) {
+      cacheStatusEl.textContent = "✓ Cache cleared successfully";
+      cacheStatusEl.style.color = "var(--lm-color-success)";
+      setTimeout(() => {
+        cacheStatusEl.style.opacity = "0";
+        setTimeout(() => {
+          cacheStatusEl.textContent = "";
+          cacheStatusEl.style.color = "var(--lm-color-muted)";
+        }, 300);
+      }, 2000);
+    } else {
+      cacheStatusEl.textContent = "✗ Failed to clear cache";
+      cacheStatusEl.style.color = "var(--lm-color-error)";
+      setTimeout(() => {
+        cacheStatusEl.style.opacity = "0";
+        setTimeout(() => {
+          cacheStatusEl.textContent = "";
+          cacheStatusEl.style.color = "var(--lm-color-muted)";
+        }, 300);
+      }, 2000);
+    }
+  });
 });
 
 load();
